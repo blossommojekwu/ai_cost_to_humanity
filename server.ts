@@ -55,7 +55,7 @@ function loadDataset(): void {
  * Generate embedding using Gemini API
  */
 async function generateEmbedding(text: string): Promise<number[]> {
-  const model = genAI.getGenerativeModel({ model: 'embedding-001' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-embedding-001' });
   const result = await model.embedContent(text);
   return result.embedding.values;
 }
@@ -117,9 +117,10 @@ app.post('/api/search', async (req: Request<{}, {}, SearchRequest>, res: Respons
       });
     }
 
-    // Sort by similarity and return top results
+    // Sort by similarity and return results above a relevance threshold
     results.sort((a, b) => b.similarity - a.similarity);
-    const topResults = results.slice(0, 10);
+    const THRESHOLD = 0.65; // 65% similarity
+    const topResults = results.filter(r => r.similarity >= THRESHOLD);
 
     res.json({
       query: query,

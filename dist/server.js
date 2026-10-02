@@ -41,7 +41,7 @@ function loadDataset() {
  * Generate embedding using Gemini API
  */
 async function generateEmbedding(text) {
-    const model = genAI.getGenerativeModel({ model: 'embedding-001' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-embedding-001' });
     const result = await model.embedContent(text);
     return result.embedding.values;
 }
