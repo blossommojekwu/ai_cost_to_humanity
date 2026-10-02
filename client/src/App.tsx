@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import ChatMessage from './components/ChatMessage';
 import SearchInput from './components/SearchInput';
-import { ChatMessage as ChatMessageType, SearchResponse } from './types';
+import { ChatMessage as ChatMessageType, SearchResponse, ModelOption } from './types';
 
 function App(): React.ReactElement {
   const [messages, setMessages] = useState<ChatMessageType[]>([
@@ -16,6 +16,18 @@ function App(): React.ReactElement {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('');
+
+  useEffect(() => {
+    axios
+      .get<ModelOption[]>('/api/models')
+      .then((res) => {
+        setModels(res.data);
+        setSelectedModel(res.data.find((m) => m.isDefault)?.id ?? res.data[0]?.id ?? '');
+      })
+      .catch(() => setError('Could not load the model list.'));
+  }, []);
 
   const scrollToBottom = (): void => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -41,8 +53,11 @@ function App(): React.ReactElement {
 
     try {
       // Call backend API
-      const response = await axios.post<SearchResponse>('/api/search', { query });
-      const { results, totalMatches } = response.data;
+      const response = await axios.post<SearchResponse>('/api/search', {
+        query,
+        model: selectedModel || undefined,
+      });
+      const { results, totalMatches, environmental } = response.data;
 
       // Format results as bot message
       const resultText = results.length > 0
@@ -54,7 +69,8 @@ function App(): React.ReactElement {
         type: 'bot',
         text: resultText,
         timestamp: new Date(),
-        results: results
+        results: results,
+        environmental
       };
 
       setMessages(prev => [...prev, botMessage]);
@@ -117,6 +133,24 @@ function App(): React.ReactElement {
 
       {/* Input Area */}
       <div className="bg-white border-t border-gray-200 p-4 shadow-lg">
+        <div className="flex items-center gap-2 mb-2">
+          <label htmlFor="model-select" className="text-sm text-gray-600 whitespace-nowrap">
+            Estimate environmental cost for:
+          </label>
+          <select
+            id="model-select"
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value)}
+            disabled={loading || models.length === 0}
+            className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+          >
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </div>
         <SearchInput onSubmit={handleSearch} disabled={loading} />
         {error && (
           <div className="mt-2 text-sm text-red-600 bg-red-50 p-3 rounded-lg">

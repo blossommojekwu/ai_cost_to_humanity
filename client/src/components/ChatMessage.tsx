@@ -1,5 +1,6 @@
 import React from 'react';
 import { IncidentWithScore, ChatMessage as ChatMessageType } from '../types';
+import EnvironmentalCostCard from './EnvironmentalCostCard';
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -13,7 +14,7 @@ export default function ChatMessage({ message, results }: ChatMessageProps): Rea
     <div className={`flex ${isBot ? 'justify-start' : 'justify-end'} mb-4`}>
       <div
         className={`px-4 py-3 rounded-lg ${
-          results && results.length > 0 ? 'w-full max-w-3xl' : 'max-w-xs lg:max-w-md xl:max-w-lg'
+          (results && results.length > 0) || message.environmental ? 'w-full max-w-3xl' : 'max-w-xs lg:max-w-md xl:max-w-lg'
         } ${
           isBot
             ? 'bg-gray-200 text-gray-800'
@@ -24,6 +25,9 @@ export default function ChatMessage({ message, results }: ChatMessageProps): Rea
         <p className={`text-xs mt-1 ${isBot ? 'text-gray-600' : 'text-blue-100'}`}>
           {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </p>
+
+        {/* Environmental cost (shown before the related incidents) */}
+        {message.environmental && <EnvironmentalCostCard cost={message.environmental} />}
 
         {/* Results List */}
         {results && results.length > 0 && (

@@ -1,0 +1,46 @@
+Model,Energy Consumption Mean (100 input-300 output) (Wh),Energy Consumption SD (100 input-300 output) (Wh),Energy Consumption Mean (1k input-1k output) (Wh),Energy Consumption SD (1k input-1k output) (Wh),Energy Consumption Mean (10k input-1.5k output) (Wh),Energy Consumption SD (10k input-1.5k output) (Wh),Average Water Consumption (100 input-300 output) (mL),Average Water Consumption (1k input-1k output) (mL),Average Water Consumption (10k input-1.5k output) (mL),Average Carbon Emissions (100 input-300 output) (gCO2e),Average Carbon Emissions (1k input-1k output) (gCO2e),Average Carbon Emissions (10k input-1.5k output) (gCO2e)
+Gemini 2.5 Pro Vertex,2.040,,2.630,,3.290,,2.80,3.61,4.53,0.47,0.61,0.76
+Gemini 2.5 Pro (AI Studio),1.820,,2.590,,3.120,,2.51,3.57,4.29,0.42,0.60,0.72
+Gemini 2.5 Flash (Vertex),0.820,,1.350,,1.990,,1.13,1.86,2.74,0.19,0.31,0.46
+GPT-4.1,0.871,0.302,3.161,0.515,4.833,0.650,3.55,14.51,18.98,0.28,0.83,1.49
+GPT-4.1 mini,0.450,0.081,1.545,0.211,2.122,0.348,2.39,12.58,11.77,0.19,0.55,0.90
+GPT-4.1 nano,0.207,0.047,0.575,0.108,0.827,0.094,0.84,2.86,3.34,0.07,0.18,0.26
+o4-mini (high),3.649,1.468,7.380,2.177,7.237,1.674,15.16,23.35,29.37,1.18,2.07,2.25
+o3,1.177,0.224,5.153,2.107,12.222,1.082,7.88,23.98,33.57,0.61,1.43,2.66
+o3-mini (high),3.012,0.991,6.865,1.330,5.389,1.183,16.05,30.09,28.20,1.24,1.92,2.15
+o3-mini,0.674,0.015,2.423,0.237,3.525,0.168,4.91,10.74,12.42,0.38,0.72,0.96
+o1,2.268,0.654,4.047,0.497,6.181,0.877,19.59,87.06,63.43,1.49,2.16,4.87
+o1-mini,0.535,0.182,1.547,0.405,2.317,0.530,1.74,,8.43,0.17,0.55,0.84
+GPT-4o (Mar '25),0.423,0.085,1.215,0.241,2.875,0.421,1.86,,12.59,0.15,0.44,1.05
+GPT-4o mini,0.577,0.139,1.897,0.570,3.098,0.639,3.32,12.82,14.93,0.26,0.63,1.14
+GPT-4 Turbo,1.699,0.355,5.940,1.441,9.877,1.304,10.15,55.92,55.45,0.79,2.44,4.22
+GPT-4,1.797,0.259,6.925,1.553,,,9.60,,,0.78,2.47,
+DeepSeek-R1 (DS)*,19.251,9.449,24.596,9.400,29.078,9.725,144.20,,219.37,12.43,15.83,18.91
+DeepSeek-V3 (DS)*,2.777,0.223,8.864,0.724,13.162,1.126,18.10,,83.48,1.56,4.74,7.20
+DeepSeek-R1 (AZ)†,2.353,1.129,4.331,1.695,7.410,2.159,15.43,41.82,38.59,1.28,1.84,2.98
+DeepSeek-V3 (AZ)†,0.742,0.125,2.165,0.578,3.696,0.221,3.56,17.03,16.66,0.28,0.79,1.27
+Claude-3.7 Sonnet,0.950,0.040,2.989,0.201,5.671,0.302,4.23,,23.15,0.36,1.08,1.92
+Claude-3.5 Sonnet,0.973,0.066,3.638,0.256,7.772,0.345,3.60,,24.35,0.38,1.32,2.54
+Claude-3.5 Haiku,0.975,0.063,4.464,0.283,8.010,0.338,4.69,,37.44,0.32,1.41,2.54
+LLaMA-3-8B,0.108,0.002,0.370,0.005,,,0.52,,,0.04,0.11,
+LLaMA-3-70B,0.861,0.022,2.871,0.094,,,4.06,,,0.28,0.86,
+LLaMA-3.1-8B,0.052,0.008,0.172,0.015,0.443,0.028,0.26,1.54,1.72,0.02,0.05,0.11
+LLaMA-3.1-70B,1.271,0.020,4.525,0.053,19.183,0.560,12.95,90.19,89.95,0.79,1.28,5.57
+LLaMA-3.1-405B,2.226,0.142,9.042,0.385,25.202,0.526,14.82,119.87,117.74,0.94,2.71,7.31
+LLaMA-3.2 1B,0.109,0.013,0.342,0.025,0.552,0.059,0.53,2.73,2.68,0.03,0.10,0.16
+LLaMA-3.2 3B,0.143,0.006,0.479,0.017,0.707,0.020,0.84,4.46,4.28,0.05,0.17,0.26
+LLaMA-3.2-vision 11B,0.078,0.021,0.242,0.071,1.087,0.060,0.65,5.15,5.49,0.04,0.09,0.35
+LLaMA-3.2-vision 90B,1.235,0.054,4.534,0.448,6.852,0.780,6.15,30.17,30.87,0.41,1.26,1.94
+LLaMA-3.3 70B,0.237,0.023,0.760,0.079,1.447,0.188,1.29,8.76,7.81,0.08,0.27,0.48
+,,,,,,,,,,,,
+Notes:,,,,,,,,,,,,
+Values transcribed from the table image supplied by the user; blank cells were '—' (no value) in the source.,,,,,,,,,,,,
+GPT-4.1 (1k input-1k output) SD appears as '0515' in the source; entered as 0.515 (assumed typo).,,,,,,,,,,,,
+* DS = served via DeepSeek's own API; † AZ = served via Azure (footnote markers kept as in source).,,,,,,,,,,,,
+"Water column: from the water-consumption table supplied by the user (100 input-300 output, mL), matched by model name.",,,,,,,,,,,,
+Name matches: GPT-4o (Mar '25) = 'GPT-4o (Mar)'; Claude-3.5 Sonnet = 'Claude 3.5 Sonnet (Oct)'; DeepSeek (DS) rows use the [128k] values; LLaMA-3.1-70B/405B use the 'Standard' values (per user).,,,,,,,,,,,,
+"Water (1k input-1k output) column: from the user-supplied table, matched by model name; LLaMA-3.1-70B/405B use 'Standard' values. Blank = model not in that table: o1-mini, GPT-4o (Mar '25), GPT-4, DeepSeek-R1 (DS)*, DeepSeek-V3 (DS)*, Claude-3.7 Sonnet, Claude-3.5 Sonnet, Claude-3.5 Haiku, LLaMA-3-8B, LLaMA-3-70B.",,,,,,,,,,,,
+"Water (10k input-1.5k output) column: from the user-supplied table, matched by model name; DeepSeek (DS) rows use [128k], LLaMA-3.1-70B/405B use 'Standard', GPT-4o (Mar '25) = 'GPT-4o (Mar)', Claude-3.5 Sonnet = '(Oct)'. Blank = not in that table: GPT-4, LLaMA-3-8B, LLaMA-3-70B.",,,,,,,,,,,,
+"Carbon (100 input-300 output) column: from the user-supplied table, matched by model name with the same conventions as the water columns ([128k] for DeepSeek (DS), 'Standard' for LLaMA-3.1, GPT-4o (Mar), Claude 3.5 Sonnet (Oct)).",,,,,,,,,,,,
+"Carbon (1k input-1k output) column: from the user-supplied table, matched by model name with the same conventions as the water columns ([128k] for DeepSeek (DS), 'Standard' for LLaMA-3.1, GPT-4o (Mar), Claude 3.5 Sonnet (Oct)).",,,,,,,,,,,,
+"Carbon (10k input-1.5k output) column: from the user-supplied table, same name-matching conventions. Blank = not in that table: GPT-4, LLaMA-3-8B, LLaMA-3-70B.",,,,,,,,,,,,

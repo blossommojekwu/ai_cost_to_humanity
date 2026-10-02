@@ -10,7 +10,20 @@ import {
   IncidentWithScore,
   SearchRequest,
   SearchResponse,
+  EnvironmentalCost,
+  ModelOption,
+  SizeBucket,
 } from './types/index.js';
+import {
+  SIZE_ASSUMPTIONS,
+  bucketFromTokens,
+  bucketFromWords,
+  countWords,
+  findDefaultGeminiRow,
+  findRow,
+  getModelRows,
+  loadEnvironmentalData,
+} from './environmental.js';
 
 dotenv.config();
 
@@ -30,6 +43,12 @@ if (!apiKey) {
 }
 const genAI = new GoogleGenerativeAI(apiKey);
 const EMBEDDING_MODEL = 'gemini-embedding-001';
+// Model used for countTokens (the "current Gemini model" default). Override via GEMINI_MODEL.
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-flash-latest';
+const ENV_CSV_PATH = path.join(ROOT, 'data', 'ai_environmental_cost.csv');
+const DEFAULT_MODEL_ID = '__default_gemini__';
+// CSV row used for the default Gemini model's figures. Override via DEFAULT_ENV_MODEL.
+const defaultGeminiRow = () => findDefaultGeminiRow(process.env.DEFAULT_ENV_MODEL);
 
 app.use(cors());
 app.use(express.json());
@@ -49,7 +68,7 @@ let lastBuildError: string | null = null;
 // Similarity above which a result is returned. Embedding cosine scores for
 // related text with gemini-embedding-001 typically fall in the 0.5-0.8 range,
 // so this is deliberately lower than a "percentage match" intuition suggests.
-const MIN_SIMILARITY = Number(process.env.MIN_SIMILARITY ?? 0.59);
+const MIN_SIMILARITY = Number(process.env.MIN_SIMILARITY ?? 0.60);
 const MAX_RESULTS = Number(process.env.MAX_RESULTS ?? 100);
 
 // ---------------------------------------------------------------------------
@@ -194,6 +213,86 @@ async function buildEmbeddings(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Environmental cost
+// ---------------------------------------------------------------------------
+async function geminiTokenCount(text: string): Promise<{ tokens: number; estimated: boolean }> {
+  try {
+    const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
+    const r = await model.countTokens(text);
+    return { tokens: r.totalTokens, estimated: false };
+  } catch (err: any) {
+    // Never fail the whole search because token counting failed.
+    console.warn('countTokens failed; estimating from word count:', err?.message);
+    return { tokens: Math.ceil(countWords(text) * 1.5), estimated: true };
+  }
+}
+
+/**
+ * Default model (Gemini): size bucket comes from countTokens.
+ * Every other model: size bucket comes from the prompt's word count.
+ */
+async function computeEnvironmental(query: string, modelId: string): Promise<EnvironmentalCost> {
+  const isDefault = modelId === DEFAULT_MODEL_ID;
+  const row = isDefault ? defaultGeminiRow() : findRow(modelId);
+
+  let size: SizeBucket;
+  let basis: 'tokens' | 'words';
+  let measured: number;
+  let measuredIsEstimate = false;
+  if (isDefault) {
+    const t = await geminiTokenCount(query);
+    size = bucketFromTokens(t.tokens);
+    basis = 'tokens';
+    measured = t.tokens;
+    measuredIsEstimate = t.estimated;
+  } else {
+    measured = countWords(query);
+    size = bucketFromWords(measured);
+    basis = 'words';
+  }
+
+  const label = row ? row.label : `Gemini (${GEMINI_MODEL})`;
+  const cell = row?.bySize[size];
+  const energyWh = cell?.energyWh ?? null;
+  const energySdWh = cell?.energySdWh ?? null;
+  const waterMl = cell?.waterMl ?? null;
+  const carbonGCO2e = cell?.carbonGCO2e ?? null;
+
+  let note: string | undefined;
+  if (!row) {
+    note =
+      'The environmental dataset has no Gemini figures yet, so only the prompt size is shown. ' +
+      'Select another model to compare.';
+  } else {
+    const missing = [
+      energyWh === null ? 'energy' : '',
+      waterMl === null ? 'water' : '',
+      carbonGCO2e === null ? 'carbon' : '',
+    ].filter(Boolean);
+    if (missing.length) {
+      note = `No ${size.toLowerCase()}-prompt ${missing.join(', ')} figure for ${label} in the dataset.`;
+    }
+  }
+
+  return {
+    modelId,
+    modelLabel: label,
+    isDefault,
+    size,
+    basis,
+    measured,
+    measuredIsEstimate,
+    assumedInputTokens: SIZE_ASSUMPTIONS[size].inputTokens,
+    assumedOutputTokens: SIZE_ASSUMPTIONS[size].outputTokens,
+    energyWh,
+    energySdWh,
+    waterMl,
+    carbonGCO2e,
+    note,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
 app.post(
@@ -214,8 +313,16 @@ app.post(
         });
       }
 
-      // The ONE semantic call per request.
-      const q = await embedQuery(query);
+      const modelId = req.body?.model || DEFAULT_MODEL_ID;
+      if (modelId !== DEFAULT_MODEL_ID && !findRow(modelId)) {
+        return res.status(400).json({ error: `Unknown model: ${modelId}` });
+      }
+
+      // The ONE semantic call per request (run alongside the token count).
+      const [q, environmental] = await Promise.all([
+        embedQuery(query),
+        computeEnvironmental(query, modelId),
+      ]);
 
       const scored: IncidentWithScore[] = [];
       for (let k = 0; k < incidents.length; k++) {
@@ -240,7 +347,7 @@ app.post(
           `in ${Date.now() - started}ms, index ${embeddings.size}/${incidents.length}`
       );
 
-      res.json({ query, results, totalMatches: results.length });
+      res.json({ query, results, totalMatches: results.length, environmental });
     } catch (error: any) {
       console.error('Search error:', error);
       res.status(error?.status === 429 ? 429 : 500).json({
@@ -250,6 +357,21 @@ app.post(
     }
   }
 );
+
+app.get('/api/models', (_req: Request, res: Response<ModelOption[]>) => {
+  const geminiRow = defaultGeminiRow();
+  const options: ModelOption[] = [
+    {
+      id: DEFAULT_MODEL_ID,
+      label: geminiRow ? `${geminiRow.label} (default)` : `Gemini – ${GEMINI_MODEL} (default)`,
+      isDefault: true,
+    },
+    ...getModelRows()
+      .filter((r) => r !== geminiRow)
+      .map((r) => ({ id: r.name, label: r.label })),
+  ];
+  res.json(options);
+});
 
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({
@@ -271,6 +393,11 @@ app.post('/api/embeddings/rebuild', (_req: Request, res: Response) => {
 // Start
 // ---------------------------------------------------------------------------
 loadDataset();
+try {
+  console.log(`Loaded environmental data for ${loadEnvironmentalData(ENV_CSV_PATH)} models`);
+} catch (err) {
+  console.error('Could not load environmental CSV:', err);
+}
 loadEmbeddings();
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
