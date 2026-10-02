@@ -11,6 +11,7 @@ export interface AIIncident {
 export interface IncidentWithScore extends AIIncident {
     similarity: number;
     relevanceScore: number;
+    finalScore?: number;
 }
 export interface SearchRequest {
     query: string;

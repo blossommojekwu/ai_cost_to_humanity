@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, TaskType } from '@google/generative-ai';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -10,144 +10,269 @@ import {
   IncidentWithScore,
   SearchRequest,
   SearchResponse,
-  HealthResponse,
 } from './types/index.js';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+// Works from both ./server.ts (tsx) and ./dist/server.js (compiled)
+const ROOT = fs.existsSync(path.join(__dirname, 'data')) ? __dirname : path.join(__dirname, '..');
+const DATA_PATH = path.join(ROOT, 'data', 'ai_incidents.json');
+const EMBEDDINGS_PATH = path.join(ROOT, 'data', 'embeddings.json');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Initialize Gemini API
 const apiKey = process.env.GEMINI_API_KEY;
 if (!apiKey) {
   throw new Error('GEMINI_API_KEY environment variable is not set');
 }
 const genAI = new GoogleGenerativeAI(apiKey);
+const EMBEDDING_MODEL = 'gemini-embedding-001';
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
+// ---------------------------------------------------------------------------
 // State
-let incidentsDataset: AIIncident[] = [];
+// ---------------------------------------------------------------------------
+type Incident = AIIncident & Record<string, any>;
 
-/**
- * Load AI incidents dataset from JSON file
- */
+let incidents: Incident[] = [];
+const incidentIds: string[] = [];
+// id -> L2-normalised embedding (so cosine similarity == dot product)
+const embeddings = new Map<string, Float32Array>();
+let building = false;
+let lastBuildError: string | null = null;
+
+// Similarity above which a result is returned. Embedding cosine scores for
+// related text with gemini-embedding-001 typically fall in the 0.5-0.8 range,
+// so this is deliberately lower than a "percentage match" intuition suggests.
+const MIN_SIMILARITY = Number(process.env.MIN_SIMILARITY ?? 0.55);
+const MAX_RESULTS = Number(process.env.MAX_RESULTS ?? 20);
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+function getId(i: Incident): string {
+  return String(i['Incident ID'] ?? i.id);
+}
+
+/** Text that represents an incident for embedding: content + Tags + Risk Subdomain. */
+function incidentText(i: Incident): string {
+  const parts = [
+    i.title,
+    i.description,
+    i.Tags ? `Tags: ${i.Tags}` : '',
+    i.Techniques ? `Techniques: ${i.Techniques}` : '',
+    i['Risk Domain'] ? `Risk domain: ${i['Risk Domain']}` : '',
+    i['Risk Subdomain'] ? `Risk subdomain: ${i['Risk Subdomain']}` : '',
+  ];
+  return parts.filter(Boolean).join('\n');
+}
+
+function normalise(values: number[]): Float32Array {
+  const v = Float32Array.from(values);
+  let sum = 0;
+  for (let k = 0; k < v.length; k++) sum += v[k] * v[k];
+  const norm = Math.sqrt(sum) || 1;
+  for (let k = 0; k < v.length; k++) v[k] /= norm;
+  return v;
+}
+
+function dot(a: Float32Array, b: Float32Array): number {
+  let s = 0;
+  for (let k = 0; k < a.length; k++) s += a[k] * b[k];
+  return s;
+}
+
+function retryDelayMs(err: any): number | null {
+  const info = (err?.errorDetails ?? []).find((d: any) => String(d['@type']).includes('RetryInfo'));
+  const m = info?.retryDelay?.match?.(/^(\d+(?:\.\d+)?)s$/);
+  return m ? Math.ceil(parseFloat(m[1]) * 1000) + 500 : null;
+}
+
+async function withRetry<T>(fn: () => Promise<T>, attempts = 6): Promise<T> {
+  let backoff = 2000;
+  for (let n = 1; ; n++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      if (n >= attempts || ![429, 500, 503].includes(err?.status)) throw err;
+      const wait = retryDelayMs(err) ?? backoff;
+      console.warn(`Gemini ${err.status}; retrying in ${wait}ms (attempt ${n}/${attempts})`);
+      await sleep(wait);
+      backoff *= 2;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Gemini embedding calls
+// ---------------------------------------------------------------------------
+async function embedQuery(text: string): Promise<Float32Array> {
+  const model = genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
+  const res = await withRetry(() =>
+    model.embedContent({
+      content: { role: 'user', parts: [{ text }] },
+      taskType: TaskType.RETRIEVAL_QUERY,
+    })
+  );
+  return normalise(res.embedding.values);
+}
+
+async function embedDocuments(texts: string[]): Promise<Float32Array[]> {
+  const model = genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
+  const res = await withRetry(() =>
+    model.batchEmbedContents({
+      requests: texts.map((text) => ({
+        content: { role: 'user', parts: [{ text }] },
+        taskType: TaskType.RETRIEVAL_DOCUMENT,
+      })),
+    })
+  );
+  return res.embeddings.map((e) => normalise(e.values));
+}
+
+// ---------------------------------------------------------------------------
+// Persistence
+// ---------------------------------------------------------------------------
+function loadEmbeddings(): void {
+  if (!fs.existsSync(EMBEDDINGS_PATH)) return;
+  try {
+    const raw: Record<string, number[]> = JSON.parse(fs.readFileSync(EMBEDDINGS_PATH, 'utf8'));
+    for (const [id, vec] of Object.entries(raw)) embeddings.set(id, normalise(vec));
+    console.log(`Loaded ${embeddings.size} cached embeddings`);
+  } catch (err) {
+    console.error('Failed to read embeddings cache:', err);
+  }
+}
+
+function saveEmbeddings(): void {
+  const out: Record<string, number[]> = {};
+  for (const [id, vec] of embeddings) out[id] = Array.from(vec, (x) => Math.round(x * 1e6) / 1e6);
+  fs.writeFileSync(EMBEDDINGS_PATH, JSON.stringify(out));
+}
+
 function loadDataset(): void {
+  incidents = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
+  incidentIds.length = 0;
+  for (const i of incidents) incidentIds.push(getId(i));
+  console.log(`Loaded ${incidents.length} AI incidents`);
+}
+
+// ---------------------------------------------------------------------------
+// Embedding index build (batched, resumable)
+// ---------------------------------------------------------------------------
+const BATCH_SIZE = 100;
+
+async function buildEmbeddings(): Promise<void> {
+  if (building) return;
+  building = true;
+  lastBuildError = null;
   try {
-    const dataPath = path.join(__dirname, 'data', 'ai_incidents.json');
-    if (fs.existsSync(dataPath)) {
-      const rawData = fs.readFileSync(dataPath, 'utf8');
-      incidentsDataset = JSON.parse(rawData);
-      console.log(`Loaded ${incidentsDataset.length} AI incidents`);
+    const pending = incidents.filter((i) => !embeddings.has(getId(i)));
+    console.log(`Embedding ${pending.length} incidents in batches of ${BATCH_SIZE}...`);
+    for (let start = 0; start < pending.length; start += BATCH_SIZE) {
+      const batch = pending.slice(start, start + BATCH_SIZE);
+      const vectors = await embedDocuments(batch.map(incidentText));
+      batch.forEach((inc, k) => embeddings.set(getId(inc), vectors[k]));
+      saveEmbeddings();
+      console.log(`  embedded ${embeddings.size}/${incidents.length}`);
+      await sleep(1000);
     }
-  } catch (error) {
-    console.error('Error loading dataset:', error);
+    console.log('Embedding index complete');
+  } catch (err: any) {
+    lastBuildError = err?.message ?? String(err);
+    console.error('Embedding build stopped:', lastBuildError);
+  } finally {
+    building = false;
   }
 }
 
-/**
- * Generate embedding using Gemini API
- */
-async function generateEmbedding(text: string): Promise<number[]> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-embedding-001' });
-  const result = await model.embedContent(text);
-  return result.embedding.values;
-}
+// ---------------------------------------------------------------------------
+// Routes
+// ---------------------------------------------------------------------------
+app.post(
+  '/api/search',
+  async (
+    req: Request<{}, {}, SearchRequest>,
+    res: Response<SearchResponse | { error: string; details?: string }>
+  ) => {
+    const started = Date.now();
+    try {
+      const query = req.body?.query?.trim();
+      if (!query) return res.status(400).json({ error: 'Query cannot be empty' });
+      if (embeddings.size === 0) {
+        return res.status(503).json({
+          error: building
+            ? 'Embedding index is still being built. Try again in a minute.'
+            : 'Embedding index is empty. POST /api/embeddings/rebuild to build it.',
+        });
+      }
 
-/**
- * Calculate cosine similarity between two vectors
- */
-function cosineSimilarity(vecA: number[], vecB: number[]): number {
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
+      // The ONE semantic call per request.
+      const q = await embedQuery(query);
 
-  for (let i = 0; i < vecA.length; i++) {
-    dotProduct += vecA[i] * vecB[i];
-    normA += vecA[i] * vecA[i];
-    normB += vecB[i] * vecB[i];
-  }
+      const scored: IncidentWithScore[] = [];
+      for (let k = 0; k < incidents.length; k++) {
+        const vec = embeddings.get(incidentIds[k]);
+        if (!vec) continue;
+        const similarity = dot(q, vec);
+        scored.push({
+          ...incidents[k],
+          id: Number(incidentIds[k]),
+          similarity,
+          relevanceScore: Math.round(similarity * 100),
+        } as IncidentWithScore);
+      }
+      scored.sort((a, b) => b.similarity - a.similarity);
 
-  normA = Math.sqrt(normA);
-  normB = Math.sqrt(normB);
+      let results = scored.filter((r) => r.similarity >= MIN_SIMILARITY).slice(0, MAX_RESULTS);
+      // Never return nothing when we have an index: show the closest few.
+      if (results.length === 0) results = scored.slice(0, 5);
 
-  if (normA === 0 || normB === 0) return 0;
-  return dotProduct / (normA * normB);
-}
+      console.log(
+        `"${query}" -> ${results.length} results (top ${scored[0]?.similarity.toFixed(3)}) ` +
+          `in ${Date.now() - started}ms, index ${embeddings.size}/${incidents.length}`
+      );
 
-/**
- * POST /api/search - Search for incidents related to a query
- */
-app.post('/api/search', async (req: Request<{}, {}, SearchRequest>, res: Response<SearchResponse | { error: string; details?: string }>) => {
-  try {
-    const { query } = req.body;
-
-    if (!query || query.trim() === '') {
-      return res.status(400).json({ error: 'Query cannot be empty' });
-    }
-
-    if (incidentsDataset.length === 0) {
-      return res.status(500).json({ error: 'Dataset not loaded' });
-    }
-
-    // Generate embedding for the query
-    console.log('Generating embedding for query:', query);
-    const queryEmbedding = await generateEmbedding(query);
-
-    // Generate embeddings for dataset items and calculate similarity
-    const results: IncidentWithScore[] = [];
-    for (const incident of incidentsDataset) {
-      const incidentText = `${incident.title || ''} ${incident.description || ''} ${incident.content || ''}`.trim();
-
-      if (!incidentText) continue;
-
-      const incidentEmbedding = await generateEmbedding(incidentText);
-      const similarity = cosineSimilarity(queryEmbedding, incidentEmbedding);
-
-      results.push({
-        ...incident,
-        similarity: similarity,
-        relevanceScore: Math.round(similarity * 100),
+      res.json({ query, results, totalMatches: results.length });
+    } catch (error: any) {
+      console.error('Search error:', error);
+      res.status(error?.status === 429 ? 429 : 500).json({
+        error: error?.status === 429 ? 'Gemini rate limit hit. Please retry shortly.' : 'Failed to process search',
+        details: error?.message,
       });
     }
-
-    // Sort by similarity and return results above a relevance threshold
-    results.sort((a, b) => b.similarity - a.similarity);
-    const THRESHOLD = 0.65; // 65% similarity
-    const topResults = results.filter(r => r.similarity >= THRESHOLD);
-
-    res.json({
-      query: query,
-      results: topResults,
-      totalMatches: results.length,
-    });
-  } catch (error) {
-    console.error('Search error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ error: 'Failed to process search', details: errorMessage });
   }
-});
+);
 
-/**
- * GET /api/health - Health check endpoint
- */
-app.get('/api/health', (_req: Request, res: Response<HealthResponse>) => {
+app.get('/api/health', (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
-    datasetSize: incidentsDataset.length,
+    datasetSize: incidents.length,
+    embedded: embeddings.size,
+    building,
+    lastBuildError,
   });
 });
 
-/**
- * Start server
- */
+app.post('/api/embeddings/rebuild', (_req: Request, res: Response) => {
+  if (building) return res.json({ status: 'already-building', embedded: embeddings.size });
+  void buildEmbeddings();
+  res.json({ status: 'started', embedded: embeddings.size, total: incidents.length });
+});
+
+// ---------------------------------------------------------------------------
+// Start
+// ---------------------------------------------------------------------------
 loadDataset();
+loadEmbeddings();
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+  if (embeddings.size < incidents.length) void buildEmbeddings();
 });
