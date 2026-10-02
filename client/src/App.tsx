@@ -81,18 +81,7 @@ function App(): React.ReactElement {
 
   const formatResults = (results: ChatMessageType['results'], query: string, totalMatches: number): string => {
     if (!results) return '';
-    
-    const topResults = results.slice(0, 5);
-    let text = `Found ${totalMatches} incidents related to "${query}".\n\nTop matches:\n\n`;
-    
-    topResults.forEach((result, index) => {
-      text += `${index + 1}. ${result.title || 'Untitled'} (${result.relevanceScore}% match)\n`;
-      if (result.description) {
-        text += `   ${result.description.substring(0, 150)}...\n\n`;
-      }
-    });
-
-    return text;
+    return `Found ${totalMatches} incidents related to "${query}", ranked by relevance:`;
   };
 
   return (

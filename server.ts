@@ -49,8 +49,8 @@ let lastBuildError: string | null = null;
 // Similarity above which a result is returned. Embedding cosine scores for
 // related text with gemini-embedding-001 typically fall in the 0.5-0.8 range,
 // so this is deliberately lower than a "percentage match" intuition suggests.
-const MIN_SIMILARITY = Number(process.env.MIN_SIMILARITY ?? 0.55);
-const MAX_RESULTS = Number(process.env.MAX_RESULTS ?? 20);
+const MIN_SIMILARITY = Number(process.env.MIN_SIMILARITY ?? 0.59);
+const MAX_RESULTS = Number(process.env.MAX_RESULTS ?? 100);
 
 // ---------------------------------------------------------------------------
 // Helpers
