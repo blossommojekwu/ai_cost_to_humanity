@@ -1,0 +1,47 @@
+[
+  {
+    "id": 1,
+    "title": "Automated hiring system bias",
+    "description": "AI hiring tool showed bias against women in technical roles",
+    "content": "A major tech company's automated resume screening tool was found to discriminate against female candidates for technical positions. The system was trained on historical hiring data that reflected past gender biases in the industry.",
+    "date": "2018-10-10",
+    "category": "employment",
+    "severity": "high"
+  },
+  {
+    "id": 2,
+    "title": "Facial recognition misidentification",
+    "description": "Facial recognition system incorrectly identified people with darker skin tones",
+    "content": "Research showed that commercial facial recognition systems had significantly higher error rates for darker-skinned individuals, particularly women. This led to false arrests and discriminatory profiling by law enforcement.",
+    "date": "2020-06-15",
+    "category": "law_enforcement",
+    "severity": "critical"
+  },
+  {
+    "id": 3,
+    "title": "Predictive policing algorithm",
+    "description": "Predictive policing system perpetuated historical biases in crime data",
+    "content": "An algorithm used to predict crime hotspots disproportionately targeted neighborhoods with minority populations, reflecting and amplifying historical policing patterns rather than actual crime rates.",
+    "date": "2016-08-01",
+    "category": "law_enforcement",
+    "severity": "high"
+  },
+  {
+    "id": 4,
+    "title": "Loan approval discrimination",
+    "description": "AI lending system discriminated based on protected characteristics",
+    "content": "An automated loan approval system was found to discriminate against applicants based on race and gender, denying loans to qualified applicants from minority groups at higher rates.",
+    "date": "2019-11-20",
+    "category": "finance",
+    "severity": "high"
+  },
+  {
+    "id": 5,
+    "title": "Algorithmic social media amplification",
+    "description": "Social media algorithms amplified misinformation and hate speech",
+    "content": "AI recommendation algorithms on social media platforms were found to amplify divisive content, misinformation, and hate speech, contributing to radicalization and social polarization.",
+    "date": "2020-10-01",
+    "category": "content_moderation",
+    "severity": "high"
+  }
+]
