@@ -69,7 +69,7 @@ let lastBuildError: string | null = null;
 // related text with gemini-embedding-001 typically fall in the 0.5-0.8 range,
 // so this is deliberately lower than a "percentage match" intuition suggests.
 const MIN_SIMILARITY = Number(process.env.MIN_SIMILARITY ?? 0.60);
-const MAX_RESULTS = Number(process.env.MAX_RESULTS ?? 100);
+const MAX_RESULTS = Number(process.env.MAX_RESULTS ?? 1671); // 1671 = all incidents in the dataset
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -338,9 +338,9 @@ app.post(
       }
       scored.sort((a, b) => b.similarity - a.similarity);
 
-      let results = scored.filter((r) => r.similarity >= MIN_SIMILARITY).slice(0, MAX_RESULTS);
-      // Never return nothing when we have an index: show the closest few.
-      if (results.length === 0) results = scored.slice(0, 5);
+      const results = scored.filter((r) => r.similarity >= MIN_SIMILARITY).slice(0, MAX_RESULTS);
+      // No fallback: when nothing passes MIN_SIMILARITY the response has an empty `results`
+      // array and still includes the environmental cost.
 
       console.log(
         `"${query}" -> ${results.length} results (top ${scored[0]?.similarity.toFixed(3)}) ` +

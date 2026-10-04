@@ -62,7 +62,7 @@ function App(): React.ReactElement {
       // Format results as bot message
       const resultText = results.length > 0
         ? formatResults(results, query, totalMatches)
-        : 'No matching incidents found. Try a different query.';
+        : 'No AI incidents have been linked to your request. There may not be an existential cost to humanity';
 
       const botMessage: ChatMessageType = {
         id: messages.length + 2,
