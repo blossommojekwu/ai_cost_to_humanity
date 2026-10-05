@@ -122,6 +122,9 @@ body.open #panel{transform:translateX(0)}
 #panel h2{font-weight:500;font-size:19px;line-height:1.25;letter-spacing:-.01em;margin:10px 0 0}
 #panel .meta{font-family:var(--mono);font-size:10.5px;line-height:1.9;opacity:.62;margin:12px 0 0}
 #panel .body{font-size:13.5px;line-height:1.62;margin:16px 0 0;opacity:.88}
+#panel .body.scroll{max-height:9.5em;overflow-y:auto;padding-right:8px;scrollbar-width:thin;scrollbar-color:rgba(150,140,150,.55) transparent}
+#panel .body.scroll::-webkit-scrollbar{width:6px}
+#panel .body.scroll::-webkit-scrollbar-thumb{background:rgba(150,140,150,.5);border-radius:3px}
 #panel h3{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;
   opacity:.45;margin:26px 0 10px;font-weight:400}
 #panel .tags{display:flex;flex-wrap:wrap;gap:5px}
@@ -1923,7 +1926,7 @@ function openPanel(idx){
     <p class="meta">${s.y} &middot; severity ${Math.round(s.s)} ${esc(bandOf(s.s))}${s.sl ? " (institutional scale)" : ""} &middot; harm weight ${s.h.toFixed(2)}
       <br>${s.dev ? esc(s.dev) + " &middot; " : ""}${s.rc} report${s.rc==1?"":"s"}
       &middot; ${esc(s.cf)} confidence</p>
-    <p class="body">${esc(s.b || "")}${(s.b || "").length >= 299 ? "…" : ""}</p>
+    <p class="body" id="descbody">${esc(s.b || "")}${(s.b || "").length >= 299 ? "…" : ""}</p>
     ${s.tg.length ? `<h3>Harm tags</h3><div class="tags">${s.tg.map(t=>`<span class="tg">${esc(t)}</span>`).join("")}</div>` : ""}
     <div id="harmedbox"></div>
     ${s.te && s.te.length ? `<h3>Technique</h3><div class="tags">${s.te.map(t=>`<span class="tg">${esc(t)}</span>`).join("")}</div>` : ""}
@@ -1941,6 +1944,7 @@ function openPanel(idx){
   document.body.classList.add("open");
   document.getElementById("panel").scrollTop = 0;
   loadHarmed(s.id);
+  loadDescription(s.id);
   if (commit < 0.9) commit = 1;
 }
 function closePanel(){ document.body.classList.remove("open"); selIdx = -1; }
@@ -1962,6 +1966,25 @@ async function loadHarmed(id){
     const d = await r.json();
     HARMED.set(id, d.harmed || []);
     draw(HARMED.get(id));
+  } catch(e){}
+}
+/* the page only carries the first ~300 characters; the full text is fetched by Incident ID */
+const DESCS = new Map();
+async function loadDescription(id){
+  const draw = text => {
+    if (selIdx < 0 || SPIKES[selIdx].id !== id) return;
+    const el = document.getElementById("descbody");
+    if (!el || !text) return;
+    el.textContent = text;
+    el.classList.add("scroll");
+  };
+  if (DESCS.has(id)) return draw(DESCS.get(id));
+  try {
+    const r = await fetch(`/api/incidents/${id}/description`);
+    if (!r.ok) return;
+    const d = await r.json();
+    DESCS.set(id, d.description || "");
+    draw(DESCS.get(id));
   } catch(e){}
 }
 document.getElementById("close").onclick = closePanel;

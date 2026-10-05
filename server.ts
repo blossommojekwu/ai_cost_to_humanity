@@ -364,6 +364,12 @@ app.post(
   }
 );
 
+app.get('/api/incidents/:id/description', (req: Request, res: Response) => {
+  const inc = incidentById.get(String(req.params.id));
+  if (!inc) return res.status(404).json({ error: 'Incident not found' });
+  res.json({ id: Number(req.params.id), description: String(inc.description ?? '') });
+});
+
 app.get('/api/incidents/:id/harmed', (req: Request, res: Response) => {
   const inc = incidentById.get(String(req.params.id));
   if (!inc) return res.status(404).json({ error: 'Incident not found' });
