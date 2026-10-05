@@ -60,6 +60,8 @@ type Incident = AIIncident & Record<string, any>;
 
 let incidents: Incident[] = [];
 const incidentIds: string[] = [];
+// Incident ID -> incident, so any field is one lookup away (no scanning)
+const incidentById = new Map<string, Incident>();
 // id -> L2-normalised embedding (so cosine similarity == dot product)
 const embeddings = new Map<string, Float32Array>();
 let building = false;
@@ -179,7 +181,11 @@ function saveEmbeddings(): void {
 function loadDataset(): void {
   incidents = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
   incidentIds.length = 0;
-  for (const i of incidents) incidentIds.push(getId(i));
+  incidentById.clear();
+  for (const i of incidents) {
+    incidentIds.push(getId(i));
+    incidentById.set(getId(i), i);
+  }
   console.log(`Loaded ${incidents.length} AI incidents`);
 }
 
@@ -357,6 +363,16 @@ app.post(
     }
   }
 );
+
+app.get('/api/incidents/:id/harmed', (req: Request, res: Response) => {
+  const inc = incidentById.get(String(req.params.id));
+  if (!inc) return res.status(404).json({ error: 'Incident not found' });
+  const raw = inc.harmed;
+  const harmed = (Array.isArray(raw) ? raw : String(raw ?? '').split(','))
+    .map((x) => String(x).trim())
+    .filter(Boolean);
+  res.json({ id: Number(req.params.id), harmed });
+});
 
 app.get('/api/models', (_req: Request, res: Response<ModelOption[]>) => {
   const geminiRow = defaultGeminiRow();
