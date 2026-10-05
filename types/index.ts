@@ -46,11 +46,23 @@ export interface SearchRequest {
   model?: string;
 }
 
+export interface SessionSummary {
+  id: number;
+  promptCount: number;
+  totalEnergyWh: number;
+  totalWaterMl: number;
+  totalCarbonG: number;
+}
+
 export interface SearchResponse {
   query: string;
   results: IncidentWithScore[];
   totalMatches: number;
   environmental?: EnvironmentalCost;
+  /** Running totals for the signed-in (or guest) session, when there is one. */
+  session?: SessionSummary;
+  /** IDs of matched incidents that meet the irreversibility rule. */
+  irreversibleIds?: number[];
 }
 
 export interface HealthResponse {

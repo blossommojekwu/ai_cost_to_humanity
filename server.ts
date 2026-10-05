@@ -24,6 +24,8 @@ import {
   getModelRows,
   loadEnvironmentalData,
 } from './environmental.js';
+import { Store } from './db.js';
+import { currentLogin, registerAccountRoutes } from './auth.js';
 
 dotenv.config();
 
@@ -52,6 +54,12 @@ const defaultGeminiRow = () => findDefaultGeminiRow(process.env.DEFAULT_ENV_MODE
 
 app.use(cors());
 app.use(express.json());
+
+// Accounts, sessions, prompt history. Override the file with DB_PATH.
+const store = new Store(process.env.DB_PATH ?? path.join(ROOT, 'data', 'app.db'));
+registerAccountRoutes(app, store);
+// An incident is irreversible when its Irreversibility score is at least this.
+const IRREVERSIBLE_MIN = Number(process.env.IRREVERSIBLE_MIN ?? 4.0);
 
 // ---------------------------------------------------------------------------
 // State
@@ -353,7 +361,38 @@ app.post(
           `in ${Date.now() - started}ms, index ${embeddings.size}/${incidents.length}`
       );
 
-      res.json({ query, results, totalMatches: results.length, environmental });
+      const irreversibleIds = results
+        .filter((r) => Number((r as any).Irreversibility) >= IRREVERSIBLE_MIN)
+        .map((r) => r.id);
+
+      // Record the prompt against the caller's session (guests too; their data is
+      // deleted when the session ends). Irreversible incidents are saved per user.
+      let session;
+      const login = currentLogin(req, store);
+      if (login) {
+        try {
+          const open = store.ensureSession(login);
+          session = store.recordPrompt(
+            open.id,
+            {
+              text: query,
+              modelId,
+              modelLabel: environmental.modelLabel,
+              size: environmental.size,
+              energyWh: environmental.energyWh,
+              waterMl: environmental.waterMl,
+              carbonG: environmental.carbonGCO2e,
+              envJson: JSON.stringify(environmental),
+            },
+            results.map((r) => ({ id: r.id, similarity: r.similarity }))
+          );
+          if (login.user_id != null) store.addIrreversible(login.user_id, irreversibleIds);
+        } catch (dbErr) {
+          console.error('Could not record prompt:', dbErr); // never fail the search over this
+        }
+      }
+
+      res.json({ query, results, totalMatches: results.length, environmental, session, irreversibleIds });
     } catch (error: any) {
       console.error('Search error:', error);
       res.status(error?.status === 429 ? 429 : 500).json({

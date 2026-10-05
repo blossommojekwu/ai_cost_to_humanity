@@ -198,6 +198,15 @@ body.open #panel{transform:translateX(0)}
 #login .lgo{width:100%;border:0;border-radius:999px;cursor:pointer;font-family:var(--mono);font-size:10px;
   letter-spacing:.16em;text-transform:uppercase;padding:14px 18px;background:#1b1720;color:#f4f1f6;margin-top:4px}
 #login .lgo:hover{opacity:.88}
+#login .lgo + .lgo{margin-top:10px}
+#login #lerr:empty{display:none}
+#login button[disabled]{opacity:.55;cursor:progress}
+.cs{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;padding:7px 13px;border-radius:999px;
+  cursor:pointer;background:none;color:inherit;border:1px solid rgba(150,140,150,.5);margin-top:10px;opacity:.85}
+.cs:hover{opacity:1;border-color:currentColor}
+#scost{margin:14px 0 0;padding:12px 14px;border:1px solid rgba(255,255,255,.14);border-radius:10px;font-family:var(--mono);font-size:12px;line-height:1.6}
+#scost b{font-weight:600}
+#scost .pm{display:flex;gap:18px;flex-wrap:wrap;margin-top:6px}
 #lerr{font-family:var(--mono);font-size:10.5px;color:#d64842;min-height:16px;margin:2px 0 0 18px}
 #login .or{display:flex;align-items:center;gap:12px;font-family:var(--mono);font-size:9px;letter-spacing:.2em;text-transform:uppercase;opacity:.45;margin:16px 0 14px}
 #login .or::before,#login .or::after{content:"";flex:1;height:1px;background:currentColor;opacity:.4}
@@ -421,6 +430,7 @@ body.open #panel{transform:translateX(0)}
   <p class="hline" id="sortline" style="opacity:.55"></p>
   <p class="hline" id="qcost" style="opacity:.9;cursor:pointer" hidden></p>
   <div class="hchips" id="hchips"></div>
+  <button class="cs" id="closesess" type="button" hidden title="End this session">Close session</button>
 </div>
 
 <div class="ui key" id="key"><p class="klabel">wellbeing dimensions</p></div>
@@ -465,12 +475,13 @@ body.open #panel{transform:translateX(0)}
   <form class="card" id="lform" autocomplete="on" novalidate>
     <h1 id="ltitle">Pathogen Bloom</h1>
     <p class="sub">Sign in to enter the archive.</p>
-    <label for="lemail">Email</label>
-    <input id="lemail" type="email" autocomplete="email" placeholder="you@example.com">
+    <label for="luser">Username</label>
+    <input id="luser" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="32" placeholder="your username">
     <label for="lpass">Password</label>
-    <input id="lpass" type="password" autocomplete="current-password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;">
+    <input id="lpass" type="password" autocomplete="current-password" maxlength="128" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;">
     <p id="lerr" role="alert"></p>
-    <button class="lgo" type="submit">Log in</button>
+    <button class="lgo" type="submit" id="llogin">Log in</button>
+    <button class="lgo" type="button" id="lreg">Register</button>
     <div class="or">or</div>
     <button class="guest" type="button" id="lguest">Continue as guest</button>
   </form>
@@ -488,6 +499,7 @@ body.open #panel{transform:translateX(0)}
     <div class="stat" id="cstat"></div>
     <div class="gauges" id="gauges"></div>
     <p class="gview" id="gview"></p>
+    <div id="scost" hidden></div>
     <h3>Heaviest loads</h3>
     <div id="clist"></div>
     <p class="note" id="cnote"></p>
@@ -1148,7 +1160,7 @@ function draw(){
     const isNow = matched ? matched.has(s.i) : false;
     const wasSeen = surfaced.has(s.i);
     let tier = 1;
-    if (matched || history.length) tier = isLocked || isNow ? 1 : (wasSeen ? 0.40 : 0.09);
+    if (matched || history.length || locked.size) tier = isLocked || isNow ? 1 : (wasSeen ? 0.40 : 0.09);
     const dim = tier < 1;
     const shy = focus >= 0 && focus !== s.i && !near.has(s.i);
     const p3 = pt.get(s.i);
@@ -1823,6 +1835,42 @@ document.getElementById("qcost").onclick = () => document.getElementById("vcost"
     sel.innerHTML = arr.map(m => `<option value="${esc(m.id)}">${esc(m.label)}</option>`).join("");
   } catch(err){ sel.innerHTML = '<option value="">default model</option>'; }
 })();
+/* what the backend knows about this visit: running cost totals for the open session, and who is signed in */
+let sess = null;
+let acct = {guest: true, username: null};
+function setSession(t){
+  sess = t && t.promptCount > 0 ? t : null;
+  /* Close session appears once a prompt has actually been asked */
+  document.getElementById("closesess").hidden = !sess;
+}
+/* put one answer on screen. Used by Ask, and to rebuild the page from a saved session. */
+function applyAsk(q, set, env, irrIdx, totals){
+  const sl = document.getElementById("sortline");
+  matched = set;
+  showPromptCost(env);
+  setSession(totals);
+  /* the session remembers: every prompt adds to what has been surfaced, and
+     anything irreversible is held on screen from here on */
+  const q2 = q.trim().slice(0, 42);
+  if (q2 && history[history.length-1] !== q2) history.push(q2);
+  for (const j of set) surfaced.add(j);
+  let newIrr = 0;
+  for (const j of irrIdx) if (!locked.has(j)){ locked.add(j); newIrr++; }
+  const eg = egOf(set);
+  document.getElementById("eyebrow").textContent = set.size
+    ? `${set.size} of ${NTOT} answer that` + (newIrr ? ` \u00b7 ${newIrr} of them cannot be undone` : "")
+    : NONE_MSG;
+  commit = 1;
+  /* the prompt sorts: its incidents move into the six layers */
+  const byDim = planSort(set);
+  sortTo = set.size ? 1 : 0;
+  fxTo = fyTo = fzTo = 0;           /* the sorted model is centred by construction */
+  setDist(Math.max(2.6, Math.min(3.40, 2.6 + 0.42*Math.sqrt(set.size/60))));
+  const parts = byDim.map((n,d) => n ? `${SHORT[d].toLowerCase()} ${n}` : null).filter(Boolean);
+  if (eg.n) parts.push(`environmental cost ${eg.n}${ENERGY_MEASURED ? "" : "*"}`);
+  sl.textContent = set.size ? (parts.length ? "sorted \u00b7 " + parts.join(" \u00b7 ") : "") : NONE_MSG;
+  renderHistory();
+}
 async function ask(q){
   if (!q.trim()){ matched = null; setEyebrow(); return; }
   const seq = ++askSeq;
@@ -1846,31 +1894,49 @@ async function ask(q){
     const j = ID2IDX.get(Number(r.id != null ? r.id : r["Incident ID"]));
     if (j != null) set.add(j);
   }
-  matched = set;
-  showPromptCost(data.environmental);
-  /* the session remembers: every prompt adds to what has been surfaced, and
-     anything irreversible is held on screen from here on */
-  const q2 = q.trim().slice(0, 42);
-  if (q2 && history[history.length-1] !== q2) history.push(q2);
-  let newIrr = 0;
-  for (const j of set){
-    surfaced.add(j);
-    if ((SPIKES[j].irr ?? 0) >= IRREV_MIN && !locked.has(j)){ locked.add(j); newIrr++; }
+  /* the server decides what is irreversible (and saves it for signed-in users) */
+  const irr = data.irreversibleIds
+    ? data.irreversibleIds.map(id => ID2IDX.get(Number(id))).filter(j => j != null)
+    : [...set].filter(j => (SPIKES[j].irr ?? 0) >= IRREV_MIN);
+  applyAsk(q, set, data.environmental, irr, data.session);
+}
+/* clear what a session built up. Held (irreversible) incidents stay unless asked to go. */
+function resetView(keepLocked){
+  askSeq++;
+  history.length = 0; surfaced.clear();
+  if (!keepLocked) locked.clear();
+  matched = null; sortTo = 0; sortPos.clear();
+  showPromptCost(null); setSession(null);
+  const qi2 = document.getElementById("q"); qi2.value = ""; typed = 0;
+  document.getElementById("sortline").textContent = "";
+  document.getElementById("hchips").innerHTML = "";
+  document.getElementById("gob").disabled = false;
+  setEyebrow(); renderHistory();
+  if (!locked.size){ commit = 0; scrolled = 0; hint(); }
+}
+/* rebuild the page from what the backend saved: held incidents, and any session still open */
+function restoreFromServer(st){
+  askSeq++;
+  history.length = 0; surfaced.clear(); locked.clear();
+  for (const id of st.irreversible || []){
+    const j = ID2IDX.get(Number(id)); if (j != null) locked.add(j);
   }
-  const eg = egOf(set);
-  document.getElementById("eyebrow").textContent = set.size
-    ? `${set.size} of ${NTOT} answer that` + (newIrr ? ` \u00b7 ${newIrr} of them cannot be undone` : "")
-    : NONE_MSG;
-  commit = 1;
-  /* the prompt sorts: its incidents move into the six layers */
-  const byDim = planSort(set);
-  sortTo = set.size ? 1 : 0;
-  fxTo = fyTo = fzTo = 0;           /* the sorted model is centred by construction */
-  setDist(Math.max(2.6, Math.min(3.40, 2.6 + 0.42*Math.sqrt(set.size/60))));
-  const parts = byDim.map((n,d) => n ? `${SHORT[d].toLowerCase()} ${n}` : null).filter(Boolean);
-  if (eg.n) parts.push(`environmental cost ${eg.n}${ENERGY_MEASURED ? "" : "*"}`);
-  sl.textContent = set.size ? (parts.length ? "sorted \u00b7 " + parts.join(" \u00b7 ") : "") : NONE_MSG;
-  renderHistory();
+  const sd = st.session;
+  if (sd && sd.prompts && sd.prompts.length && sd.last){
+    for (const pr of sd.prompts) history.push(pr.text.trim().slice(0, 42));
+    for (const id of sd.surfaced || []){
+      const j = ID2IDX.get(Number(id));
+      if (j == null) continue;
+      surfaced.add(j);
+      /* guests have no saved irreversible set: re-derive theirs from what the session surfaced */
+      if (st.guest && (SPIKES[j].irr ?? 0) >= IRREV_MIN) locked.add(j);
+    }
+    const set = new Set((sd.last.matched || []).map(id => ID2IDX.get(Number(id))).filter(j => j != null));
+    applyAsk(sd.last.text, set, sd.last.environmental, [], sd);
+  } else {
+    setSession(null); showPromptCost(null); setEyebrow(); renderHistory();
+    if (locked.size) commit = 1;
+  }
 }
 /* the opening affordance: say both ways in, and show the wheel working */
 function hint(){
@@ -2216,40 +2282,81 @@ document.getElementById("rclear").onclick = () => {
 paintCuts();
 requestAnimationFrame(loop);
 
-/* ---------- sign-in gate ---------- */
+/* ---------- accounts: username + password, stored in the backend database ---------- */
 (function(){
-  const gate = document.getElementById("login"), form = document.getElementById("lform");
-  const em = document.getElementById("lemail"), pw = document.getElementById("lpass"), er = document.getElementById("lerr");
-  let user = null;
-  try { user = sessionStorage.getItem("pb_user"); } catch(e){}
-  function enter(u){
+  const $ = id => document.getElementById(id);
+  const gate = $("login"), form = $("lform");
+  const un = $("luser"), pw = $("lpass"), er = $("lerr");
+  const btns = [$("llogin"), $("lreg"), $("lguest")];
+  async function api(url, method, body){
+    const r = await fetch(url, {method: method || "GET", headers: {"Content-Type": "application/json"},
+      body: body ? JSON.stringify(body) : undefined});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+    return d;
+  }
+  window.pbApi = api;
+  function enter(st){
+    acct = {guest: !!st.guest, username: st.username || null};
     gate.classList.add("gone");
     gate.setAttribute("aria-hidden","true");
-    document.dispatchEvent(new CustomEvent("pb-user", {detail: u}));
+    pw.value = ""; er.textContent = "";
+    restoreFromServer(st);
+    document.dispatchEvent(new CustomEvent("pb-user", {detail: st.guest ? "guest" : st.username}));
   }
-  if (user){ enter(user); } else { setTimeout(() => em.focus(), 60); }
-  form.addEventListener("submit", e => {
-    e.preventDefault();
-    em.classList.remove("bad"); pw.classList.remove("bad"); er.textContent = "";
-    const v = em.value.trim();
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){ em.classList.add("bad"); er.textContent = "Enter a valid email address."; em.focus(); return; }
-    if (pw.value.length < 6){ pw.classList.add("bad"); er.textContent = "Password needs at least 6 characters."; pw.focus(); return; }
-    try { sessionStorage.setItem("pb_user", v); } catch(e){}
-    pw.value = "";
-    enter(v);
-  });
-  document.getElementById("lguest").onclick = () => {
-    try { sessionStorage.setItem("pb_user", "guest"); } catch(e){}
-    pw.value = ""; em.value = ""; er.textContent = "";
-    enter("guest");
-  };
-  /* sign out lives with the other view buttons */
-  const zu = document.getElementById("zoomui");
-  zu.insertAdjacentHTML("beforeend", '<button class="vb out" id="signout">sign out</button>');
-  document.getElementById("signout").onclick = () => {
-    try { sessionStorage.removeItem("pb_user"); } catch(e){}
+  function showGate(){
     gate.classList.remove("gone"); gate.removeAttribute("aria-hidden");
-    em.value = ""; pw.value = ""; er.textContent = ""; em.focus();
+    un.value = ""; pw.value = ""; er.textContent = "";
+    un.classList.remove("bad"); pw.classList.remove("bad");
+    setTimeout(() => un.focus(), 60);
+  }
+  const busy = on => btns.forEach(b => b.disabled = on);
+  function bad(el, msg){ el.classList.add("bad"); er.textContent = msg; el.focus(); }
+
+  /* already signed in (cookie)? pick up where the session left off */
+  api("/api/auth/me").then(st => { if (st.authenticated) enter(st); else showGate(); }).catch(showGate);
+
+  async function submit(kind){
+    un.classList.remove("bad"); pw.classList.remove("bad"); er.textContent = "";
+    const u = un.value.trim();
+    if (kind === "register"){
+      if (!/^[A-Za-z0-9_.-]{3,32}$/.test(u)) return bad(un, "Username: 3-32 characters, letters, numbers, . _ -");
+      if (pw.value.length < 8) return bad(pw, "Password needs at least 8 characters.");
+    } else {
+      if (!u) return bad(un, "Enter your username.");
+      if (!pw.value) return bad(pw, "Enter your password.");
+    }
+    busy(true);
+    try {
+      enter(await api("/api/auth/" + kind, "POST", {username: u, password: pw.value}));
+    } catch(e){
+      er.textContent = e.message || "Something went wrong.";
+      if (/taken/i.test(er.textContent)) un.classList.add("bad");
+    } finally { busy(false); }
+  }
+  form.addEventListener("submit", e => { e.preventDefault(); submit("login"); });
+  $("lreg").onclick = () => submit("register");
+  $("lguest").onclick = async () => {
+    er.textContent = ""; busy(true);
+    try { enter(await api("/api/auth/guest", "POST")); }
+    catch(e){ er.textContent = e.message || "Could not start a guest session."; }
+    finally { busy(false); }
+  };
+
+  /* sign out lives with the other view buttons: it ends the session and clears the screen */
+  $("zoomui").insertAdjacentHTML("beforeend", '<button class="vb out" id="signout">sign out</button>');
+  $("signout").onclick = async () => {
+    try { await api("/api/auth/logout", "POST"); } catch(e){}
+    acct = {guest: true, username: null};
+    resetView(false); commit = 0; scrolled = 0; hint();
+    document.dispatchEvent(new CustomEvent("pb-user", {detail: null}));
+    showGate();
+  };
+
+  /* Close session: ends it. Guests lose their data; users keep their held incidents. */
+  $("closesess").onclick = async () => {
+    try { await api("/api/session/close", "POST"); } catch(e){ $("sortline").textContent = "could not close the session: " + e.message; return; }
+    resetView(!acct.guest);
   };
 })();
 
@@ -2289,6 +2396,7 @@ requestAnimationFrame(loop);
     for (const id of ["cstat","gview","clist","pcost"]) $(id).innerHTML = "";
     $("cstat").style.display = "none"; $("clist").style.display = "none"; $("pcost").hidden = true;
     $("ckick").textContent = "environmental cost \u00b7 " + (E ? E.modelLabel : "no prompt yet");
+    $("scost").hidden = true;
     if (!E){
       $("gauges").innerHTML = "";
       $("cnote").textContent = "Nothing has been spent yet. The environmental cost is only incurred when a prompt is actually run \u2014 ask something, and the energy, water and carbon emissions of that prompt on the selected model appear here, with a phage on every related virus.";
@@ -2317,6 +2425,12 @@ requestAnimationFrame(loop);
     $("gview").textContent = `${E.modelLabel} \u00b7 ${E.size.toLowerCase()} prompt (${E.measuredIsEstimate ? "~" : ""}${E.measured} ${E.basis}; assumes ${E.assumedInputTokens} in / ${E.assumedOutputTokens} out tokens)`;
     $("cnote").textContent = "Per-prompt figures come from ai_environmental_cost.csv for the selected model and the prompt\u2019s size bucket (short / medium / long). Fill is on a log scale from 0.01 to 100 of each unit."
       + (E.note ? " " + E.note : "");
+    if (sess){
+      const sc = $("scost");
+      sc.hidden = false;
+      sc.innerHTML = `<b>This session</b> \u00b7 ${sess.promptCount} prompt${sess.promptCount === 1 ? "" : "s"}, cumulative`
+        + `<div class="pm"><span>energy <b>${fmtN(sess.totalEnergyWh,2)} Wh</b></span><span>water <b>${fmtN(sess.totalWaterMl,2)} mL</b></span><span>carbon <b>${fmtN(sess.totalCarbonG,2)} gCO\u2082e</b></span></div>`;
+    }
     return;
   }
   function buildOld(){
@@ -2438,28 +2552,34 @@ requestAnimationFrame(loop);
   btn.setAttribute("aria-label","Account menu");
   const menu = document.createElement("div"); menu.id = "pmenu"; menu.setAttribute("role","menu");
   menu.innerHTML = '<div class="pm-head"><div class="pm-av" id="pmav"></div><div><div class="pm-name" id="pmname"></div>'
-    + '<div class="pm-sub" id="pmsub"></div></div></div><button class="pm-item" role="menuitem" id="pmact"></button>';
+    + '<div class="pm-sub" id="pmsub"></div></div></div>'
+    + '<button class="pm-item" role="menuitem" id="pmdel">Delete history</button>'
+    + '<button class="pm-item" role="menuitem" id="pmact"></button>';
   document.body.append(btn, menu);
   function render(u){
     const guest = !u || u === "guest";
-    let name = "Guest";
-    if (!guest){
-      name = u.split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g, c => c.toUpperCase()) || "Account";
-    }
-    const ini = guest ? "G" : name[0].toUpperCase();
+    const name = guest ? "Guest" : u;
+    const ini = name[0].toUpperCase();
     btn.textContent = ini; $("pmav").textContent = ini;
     $("pmname").textContent = name;
-    $("pmsub").textContent = guest ? "Not signed in" : u;
+    $("pmsub").textContent = guest ? "Guest \u00b7 data is deleted when the session ends" : "Signed in";
     $("pmact").textContent = guest ? "Log in" : "Sign out";
   }
-  let cur = null; try { cur = sessionStorage.getItem("pb_user"); } catch(e){}
-  render(cur);
+  render(null);
   document.addEventListener("pb-user", e => render(e.detail));
   const close = () => { menu.classList.remove("show"); btn.setAttribute("aria-expanded","false"); };
   btn.onclick = e => { e.stopPropagation(); const on = menu.classList.toggle("show"); btn.setAttribute("aria-expanded", String(on)); };
   document.addEventListener("click", e => { if (!menu.contains(e.target) && e.target !== btn) close(); });
   document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
   $("pmact").onclick = () => { close(); $("signout").click(); };
+  /* delete history: prompts, sessions and cost totals go; held irreversible incidents stay on screen */
+  $("pmdel").onclick = async () => {
+    close();
+    if (!confirm("Delete your prompt history?\n\nIncidents that cannot be undone stay on screen.")) return;
+    try { await window.pbApi("/api/history", "DELETE"); }
+    catch(e){ $("sortline").textContent = "could not delete history: " + e.message; return; }
+    resetView(true);
+  };
 
   /* environmental cost joins the wellbeing dimensions, with an info button for its pop-up */
   const ph = document.querySelector("#key .kr.ph");
