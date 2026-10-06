@@ -1871,6 +1871,9 @@ function fail(where, e){
     (e && e.stack ? String(e.stack).split("\n").slice(0,4).join("\n") : "");
 }
 let frames = 0;
+let lastFlt = "";
+const L = {hometitle: document.getElementById("hometitle"), lede: document.getElementById("lede"),
+  chips: document.getElementById("chips"), ht: "", lt: "", ct: "", lh: null};
 function loop(){
   phase += 0.016;
   /* auto-rotate: only once a search has put viruses on screen, and never while the user is dragging */
@@ -1883,7 +1886,8 @@ function loop(){
   lightT += ((lightHome ? 1 : 0) - lightT) * (reduce ? 1 : 0.06);
   if (Math.abs(lightT - (lightHome ? 1 : 0)) < 0.003) lightT = lightHome ? 1 : 0;
   /* the scene is drawn for a dark field; inverting it gives the light page with the viruses still on it */
-  cv.style.filter = lightT > 0 ? `invert(${lightT.toFixed(3)}) hue-rotate(${(180*lightT).toFixed(1)}deg)` : "";
+  const flt = lightT > 0 ? `invert(${lightT.toFixed(3)}) hue-rotate(${(180*lightT).toFixed(1)}deg)` : "";
+  if (flt !== lastFlt){ cv.style.filter = flt; lastFlt = flt; }
   sortT += (sortTo - sortT) * (reduce ? 1 : 0.026);
   const ez = reduce ? 1 : 0.11;
   yaw += (yawTo - yaw)*ez; pitch += (pitchTo - pitch)*ez; roll += (rollTo - roll)*ez;
@@ -1895,10 +1899,12 @@ function loop(){
   catch(e){ fail("draw(), frame " + frames, e); return; }
   const z = depth;
   const homeA = Math.max(1 - sm(0.04, 0.30, z), lightT);
-  document.getElementById("hometitle").style.opacity = homeA.toFixed(3);
-  document.body.classList.toggle("lighthome", homeA > 0.5);
-  document.getElementById("lede").style.opacity = String(1 - sm(0.04, 0.30, z));
-  document.getElementById("chips").style.opacity = String(1 - sm(0.30, 0.70, z));
+  const ht = homeA.toFixed(3), lt = (1 - sm(0.04, 0.30, z)).toFixed(3), ct = (1 - sm(0.30, 0.70, z)).toFixed(3);
+  if (ht !== L.ht){ L.ht = ht; L.hometitle.style.opacity = ht; }
+  const lh = homeA > 0.5;
+  if (lh !== L.lh){ L.lh = lh; document.body.classList.toggle("lighthome", lh); }
+  if (lt !== L.lt){ L.lt = lt; L.lede.style.opacity = lt; }
+  if (ct !== L.ct){ L.ct = ct; L.chips.style.opacity = ct; }
   try {
   readCam();
   requestAnimationFrame(loop);
@@ -1963,21 +1969,21 @@ function preview(q){
   /* relatedness comes from the Gemini embedding backend, and only on Ask */
 }
 const ID2IDX = new Map(ITEMS.map((x,i) => [x.i, i]));
-/* the numbers beside each layer are what is on screen from this session (surfaced + held viruses);
-   the archive-wide totals only appear after the Reveal button is pressed */
+/* the numbers beside each layer are the incidents that answer the CURRENT prompt, per wellbeing dimension
+   (not the whole session, not the archive). The archive-wide totals only appear after Reveal is pressed. */
 let showTotals = false;
 function paintKeyCounts(){
   const btns = document.querySelectorAll("#key .kr");
   if (!btns.length) return;
-  const vis = new Set([...surfaced, ...locked]);
+  const cur = matched && matched.size ? matched : null;
   const perDim = SHORT.map(() => 0);
-  for (const j of vis) perDim[SPIKES[j].d]++;
-  const hasSession = vis.size > 0;
+  if (cur) for (const j of cur) perDim[SPIKES[j].d]++;
+  const energyN = cur ? egOf(cur).n : 0;
   btns.forEach(b => {
     const kn = b.querySelector(".kn"); if (!kn) return;
     let n = null;
-    if (b.dataset.e) n = showTotals ? ENERGY_N : (surfaced.size || null);
-    else n = showTotals ? ITEMS.filter(x => x.d === +b.dataset.i).length : (hasSession ? perDim[+b.dataset.i] : null);
+    if (b.dataset.e) n = showTotals ? ENERGY_N : (cur ? energyN : null);
+    else n = showTotals ? ITEMS.filter(x => x.d === +b.dataset.i).length : (cur ? perDim[+b.dataset.i] : null);
     kn.textContent = n == null ? "" : String(n);
   });
 }
@@ -2071,17 +2077,23 @@ function paintModelCost(env){
   sel.addEventListener("change", async () => {
     /* real time: before a search, the model's short-prompt cost; after one, the same prompt repriced on the new model */
     if (!lastQuery){ paintModelCost(); return; }
-    const want = sel.value, q = lastQuery;
+    const want = sel.value, q = lastQuery, ck = want + "\u0000" + q;
     try {
-      const r = await fetch("/api/cost", {method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({query: q, model: want || undefined})});
-      if (!r.ok) throw new Error(r.status);
-      const env = await r.json();
+      let env = COSTS.get(ck);              /* toggling between models re-uses what was already priced */
+      if (!env){
+        const r = await fetch("/api/cost", {method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({query: q, model: want || undefined})});
+        if (!r.ok) throw new Error(r.status);
+        env = await r.json();
+        if (COSTS.size > 60) COSTS.delete(COSTS.keys().next().value);
+        COSTS.set(ck, env);
+      }
       if (sel.value === want && lastQuery === q) paintModelCost(env);
     } catch(e){ paintModelCost(); }
   });
 })();
 /* what the backend knows about this visit: running cost totals for the open session, and who is signed in */
+const COSTS = new Map();
 let sess = null;
 let acct = {guest: true, username: null};
 /* auto-rotate: offered once a search has rendered viruses; pause/resume at the bottom centre */
@@ -2138,19 +2150,24 @@ function applyAsk(q, set, env, irrIdx, totals){
   renderHistory();
   if (!set.size) document.getElementById("hline").textContent = NONE_MSG;
 }
+let askCtl = null;
 async function ask(q){
   if (!q.trim()){ matched = null; setEyebrow(); return; }
   const seq = ++askSeq;
+  if (askCtl) askCtl.abort();            /* a newer search supersedes the one still in flight */
+  askCtl = new AbortController();
   const gob = document.getElementById("gob"), sl = document.getElementById("hline");
   gob.disabled = true; sl.textContent = "asking\u2026";
   let data;
   try {
     const model = document.getElementById("mdl").value || undefined;
     const r = await fetch("/api/search", {method:"POST", headers:{"Content-Type":"application/json"},
+      signal: askCtl.signal,
       body: JSON.stringify({query: q.trim(), model})});
     data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || data.message || ("HTTP " + r.status));
   } catch(err){
+    if (err && err.name === "AbortError") return;
     if (seq === askSeq){ sl.textContent = "search failed: " + (err.message || err); gob.disabled = false; }
     return;
   }
@@ -2358,10 +2375,13 @@ function setDist(v){
   if (distTo > 5.2){ panXTo = 0; panYTo = 0; }
   readCam();
 }
+let lastCam = "", zreadEl = null;
 function readCam(){
-  document.getElementById("zread").textContent =
-    "×" + (DIST0/distTo).toFixed(1) + "  " +
+  const t = "×" + (DIST0/distTo).toFixed(1) + "  " +
     [yawTo, pitchTo, rollTo].map(a => (a*180/Math.PI).toFixed(0).padStart(4) + "°").join(" ");
+  if (t === lastCam) return;
+  lastCam = t;
+  (zreadEl || (zreadEl = document.getElementById("zread"))).textContent = t;
 }
 function view(y2, p2, r2){ yawTo = y2; pitchTo = p2; rollTo = r2; readCam(); }
 addEventListener("wheel", e => { try { e.preventDefault(); } catch(err){}

@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import dotenv from 'dotenv';
 import { GoogleGenerativeAI, TaskType } from '@google/generative-ai';
 import fs from 'fs';
@@ -52,8 +53,47 @@ const DEFAULT_MODEL_ID = '__default_gemini__';
 // CSV row used for the default Gemini model's figures. Override via DEFAULT_ENV_MODEL.
 const defaultGeminiRow = () => findDefaultGeminiRow(process.env.DEFAULT_ENV_MODEL);
 
+app.use(compression());
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '16kb' }));
+
+// ---- small in-memory helpers: cache + rate limit -------------------------------------
+/** Tiny LRU (Map keeps insertion order). */
+class Lru<V> {
+  private m = new Map<string, V>();
+  constructor(private max: number) {}
+  get(k: string): V | undefined {
+    const v = this.m.get(k);
+    if (v !== undefined) { this.m.delete(k); this.m.set(k, v); }
+    return v;
+  }
+  set(k: string, v: V): void {
+    this.m.delete(k); this.m.set(k, v);
+    if (this.m.size > this.max) this.m.delete(this.m.keys().next().value as string);
+  }
+  delete(k: string): void { this.m.delete(k); }
+}
+// Repeated prompts (same text) cost no Gemini call. Stores the promise so concurrent
+// identical requests share one call; failures are evicted so they can be retried.
+const queryVecCache = new Lru<Promise<Float32Array>>(500);
+const tokenCache = new Lru<Promise<{ tokens: number; estimated: boolean }>>(500);
+const normKey = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+const MAX_QUERY_CHARS = Number(process.env.MAX_QUERY_CHARS ?? 1000);
+
+// Per-IP fixed-window limiter for the routes that spend Gemini quota.
+const RATE_LIMIT = Number(process.env.RATE_LIMIT_PER_MIN ?? 30);
+const hits = new Map<string, { n: number; reset: number }>();
+setInterval(() => { const t = Date.now(); for (const [k, v] of hits) if (v.reset < t) hits.delete(k); }, 60_000).unref();
+function rateLimit(req: Request, res: Response, next: () => void) {
+  const key = req.ip ?? 'unknown', now = Date.now();
+  let h = hits.get(key);
+  if (!h || h.reset < now) { h = { n: 0, reset: now + 60_000 }; hits.set(key, h); }
+  if (++h.n > RATE_LIMIT) {
+    res.setHeader('Retry-After', String(Math.ceil((h.reset - now) / 1000)));
+    return void res.status(429).json({ error: 'Too many requests. Please slow down.' });
+  }
+  next();
+}
 
 // Accounts, sessions, prompt history. Override the file with DB_PATH.
 const store = new Store(process.env.DB_PATH ?? path.join(ROOT, 'data', 'app.db'));
@@ -72,6 +112,20 @@ const incidentIds: string[] = [];
 const incidentById = new Map<string, Incident>();
 // id -> L2-normalised embedding (so cosine similarity == dot product)
 const embeddings = new Map<string, Float32Array>();
+// Flat row-major copy of the vectors for scoring (one contiguous buffer, no Map lookups per request).
+let matrix: Float32Array | null = null;
+let matrixRows: number[] = [];   // incident index for each matrix row
+let matrixDim = 0;
+let matrixSize = -1;             // embeddings.size when the matrix was built
+function ensureMatrix(): void {
+  if (matrix && matrixSize === embeddings.size) return;
+  const rows: number[] = [];
+  for (let k = 0; k < incidents.length; k++) if (embeddings.has(incidentIds[k])) rows.push(k);
+  matrixDim = rows.length ? embeddings.get(incidentIds[rows[0]])!.length : 0;
+  const m = new Float32Array(rows.length * matrixDim);
+  rows.forEach((k, r) => m.set(embeddings.get(incidentIds[k])!, r * matrixDim));
+  matrix = m; matrixRows = rows; matrixSize = embeddings.size;
+}
 let building = false;
 let lastBuildError: string | null = null;
 
@@ -143,14 +197,22 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 6): Promise<T> {
 // Gemini embedding calls
 // ---------------------------------------------------------------------------
 async function embedQuery(text: string): Promise<Float32Array> {
-  const model = genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
-  const res = await withRetry(() =>
-    model.embedContent({
-      content: { role: 'user', parts: [{ text }] },
-      taskType: TaskType.RETRIEVAL_QUERY,
-    })
-  );
-  return normalise(res.embedding.values);
+  const key = normKey(text);
+  const hit = queryVecCache.get(key);
+  if (hit) return hit;
+  const p = (async () => {
+    const model = genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
+    const res = await withRetry(() =>
+      model.embedContent({
+        content: { role: 'user', parts: [{ text }] },
+        taskType: TaskType.RETRIEVAL_QUERY,
+      })
+    );
+    return normalise(res.embedding.values);
+  })();
+  queryVecCache.set(key, p);
+  p.catch(() => queryVecCache.delete(key));
+  return p;
 }
 
 async function embedDocuments(texts: string[]): Promise<Float32Array[]> {
@@ -230,6 +292,16 @@ async function buildEmbeddings(): Promise<void> {
 // Environmental cost
 // ---------------------------------------------------------------------------
 async function geminiTokenCount(text: string): Promise<{ tokens: number; estimated: boolean }> {
+  const key = normKey(text);
+  const hit = tokenCache.get(key);
+  if (hit) return hit;
+  const p = geminiTokenCountUncached(text);
+  tokenCache.set(key, p);
+  // do not keep estimates: retry the real count next time
+  p.then((r) => { if (r.estimated) tokenCache.delete(key); });
+  return p;
+}
+async function geminiTokenCountUncached(text: string): Promise<{ tokens: number; estimated: boolean }> {
   try {
     const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
     const r = await model.countTokens(text);
@@ -311,6 +383,7 @@ async function computeEnvironmental(query: string, modelId: string): Promise<Env
 // ---------------------------------------------------------------------------
 app.post(
   '/api/search',
+  rateLimit,
   async (
     req: Request<{}, {}, SearchRequest>,
     res: Response<SearchResponse | { error: string; details?: string }>
@@ -319,6 +392,9 @@ app.post(
     try {
       const query = req.body?.query?.trim();
       if (!query) return res.status(400).json({ error: 'Query cannot be empty' });
+      if (query.length > MAX_QUERY_CHARS) {
+        return res.status(400).json({ error: `Query is too long (max ${MAX_QUERY_CHARS} characters)` });
+      }
       if (embeddings.size === 0) {
         return res.status(503).json({
           error: building
@@ -338,31 +414,39 @@ app.post(
         computeEnvironmental(query, modelId),
       ]);
 
-      const scored: IncidentWithScore[] = [];
-      for (let k = 0; k < incidents.length; k++) {
-        const vec = embeddings.get(incidentIds[k]);
-        if (!vec) continue;
-        const similarity = dot(q, vec);
-        scored.push({
-          ...incidents[k],
-          id: Number(incidentIds[k]),
-          similarity,
-          relevanceScore: Math.round(similarity * 100),
-        } as IncidentWithScore);
+      // Score against one contiguous buffer; only incidents above the threshold are
+      // materialised and sorted (not all ~1,700).
+      ensureMatrix();
+      const mx = matrix!, dim = matrixDim;
+      let topSim = -1;
+      const results: IncidentWithScore[] = [];
+      for (let r = 0; r < matrixRows.length; r++) {
+        let similarity = 0;
+        const off = r * dim;
+        for (let d = 0; d < dim; d++) similarity += q[d] * mx[off + d];
+        if (similarity > topSim) topSim = similarity;
+        if (similarity < MIN_SIMILARITY) continue;
+        const k = matrixRows[r];
+        // The page only needs the id + score: it already holds the incident data. Send the
+        // full record only when asked (body.full), so a broad query is not a multi-MB reply.
+        results.push(
+          (req.body as any)?.full
+            ? ({ ...incidents[k], id: Number(incidentIds[k]), similarity, relevanceScore: Math.round(similarity * 100) } as IncidentWithScore)
+            : ({ id: Number(incidentIds[k]), similarity, relevanceScore: Math.round(similarity * 100) } as IncidentWithScore)
+        );
       }
-      scored.sort((a, b) => b.similarity - a.similarity);
-
-      const results = scored.filter((r) => r.similarity >= MIN_SIMILARITY).slice(0, MAX_RESULTS);
+      results.sort((a, b) => b.similarity - a.similarity);
+      if (results.length > MAX_RESULTS) results.length = MAX_RESULTS;
       // No fallback: when nothing passes MIN_SIMILARITY the response has an empty `results`
       // array and still includes the environmental cost.
 
       console.log(
-        `"${query}" -> ${results.length} results (top ${scored[0]?.similarity.toFixed(3)}) ` +
+        `"${query}" -> ${results.length} results (top ${topSim.toFixed(3)}) ` +
           `in ${Date.now() - started}ms, index ${embeddings.size}/${incidents.length}`
       );
 
       const irreversibleIds = results
-        .filter((r) => Number((r as any).Irreversibility) >= IRREVERSIBLE_MIN)
+        .filter((r) => Number(incidentById.get(String(r.id))?.Irreversibility) >= IRREVERSIBLE_MIN)
         .map((r) => r.id);
 
       // Record the prompt against the caller's session (guests too; their data is
@@ -406,12 +490,14 @@ app.post(
 app.get('/api/incidents/:id/description', (req: Request, res: Response) => {
   const inc = incidentById.get(String(req.params.id));
   if (!inc) return res.status(404).json({ error: 'Incident not found' });
+  res.setHeader('Cache-Control', 'public, max-age=86400');
   res.json({ id: Number(req.params.id), description: String(inc.description ?? '') });
 });
 
 app.get('/api/incidents/:id/harmed', (req: Request, res: Response) => {
   const inc = incidentById.get(String(req.params.id));
   if (!inc) return res.status(404).json({ error: 'Incident not found' });
+  res.setHeader('Cache-Control', 'public, max-age=86400');
   const raw = inc.harmed;
   const harmed = (Array.isArray(raw) ? raw : String(raw ?? '').split(','))
     .map((x) => String(x).trim())
@@ -420,6 +506,7 @@ app.get('/api/incidents/:id/harmed', (req: Request, res: Response) => {
 });
 
 app.get('/api/models', (_req: Request, res: Response<ModelOption[]>) => {
+  res.setHeader('Cache-Control', 'public, max-age=3600');
   const geminiRow = defaultGeminiRow();
   const shortOf = (row: any): ModelOption['short'] => {
     const c = row?.bySize?.Short;
@@ -440,10 +527,11 @@ app.get('/api/models', (_req: Request, res: Response<ModelOption[]>) => {
 });
 
 // Price a prompt on a model without searching or recording anything.
-app.post('/api/cost', async (req: Request, res: Response) => {
+app.post('/api/cost', rateLimit, async (req: Request, res: Response) => {
   try {
     const query = String(req.body?.query ?? '').trim();
     if (!query) return res.status(400).json({ error: 'query is required' });
+    if (query.length > MAX_QUERY_CHARS) return res.status(400).json({ error: 'query is too long' });
     res.json(await computeEnvironmental(query, req.body?.model || DEFAULT_MODEL_ID));
   } catch (err: any) {
     res.status(500).json({ error: 'Cost lookup failed', details: err?.message });
