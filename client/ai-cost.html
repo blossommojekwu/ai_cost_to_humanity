@@ -31,7 +31,8 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;cursor:crossh
 #pcost b{font-weight:600}
 #pcost .pm{display:flex;gap:18px;flex-wrap:wrap;margin-top:6px}
 .go{border:0;border-radius:999px;cursor:pointer;font-family:var(--mono);font-size:9.5px;
-  letter-spacing:.14em;text-transform:uppercase;padding:10px 15px}
+  letter-spacing:.14em;text-transform:uppercase;padding:10px 15px;display:inline-flex;align-items:center;justify-content:center}
+.go svg{display:block}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;justify-content:center;transition:opacity .5s}
 @media (max-width:860px){
   .chips{flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;
@@ -344,14 +345,14 @@ body.open #panel{transform:translateX(0)}
   font-family:var(--mono);font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;
   backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:0}
 #profile:hover{border-color:#1b1720}
-#pmenu{position:fixed;top:56px;right:14px;z-index:40;width:236px;background:#100c14;color:#efe9f2;
+#pmenu{position:fixed;top:56px;right:14px;z-index:40;width:290px;max-width:calc(100vw - 28px);background:#100c14;color:#efe9f2;
   border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:14px;box-shadow:0 18px 50px rgba(20,10,30,.3);display:none}
 #pmenu.show{display:block}
 .pm-head{display:flex;gap:10px;align-items:center;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,.1);margin-bottom:8px}
 .pm-av{width:34px;height:34px;border-radius:50%;background:rgb(96,242,164);color:#0d1a13;display:flex;
   align-items:center;justify-content:center;font-family:var(--mono);font-size:13px;flex:none}
 .pm-name{font-size:13px;font-weight:500;line-height:1.25}
-.pm-sub{font-family:var(--mono);font-size:10px;opacity:.55;word-break:break-all;margin-top:2px}
+.pm-sub{font-family:var(--mono);font-size:10px;opacity:.55;overflow-wrap:break-word;word-break:normal;margin-top:2px}
 .pm-item{display:block;width:100%;text-align:left;background:none;border:0;color:inherit;font-family:var(--mono);
   font-size:11px;letter-spacing:.06em;padding:9px 8px;border-radius:6px;cursor:pointer}
 .pm-item:hover{background:rgba(255,255,255,.08)}
@@ -402,6 +403,13 @@ body.open #panel{transform:translateX(0)}
   .hist{left:auto;right:26px;transform:none;width:auto;max-width:min(38vw,460px);text-align:right;top:auto;bottom:24px}
   .hchips{justify-content:flex-end}
 }
+/* light homepage title: large, above the search bar; hidden on the dark virus page */
+#hometitle{position:absolute;left:0;right:0;bottom:100%;margin:0 0 18px;text-align:center;font-weight:300;
+  font-size:clamp(34px,5.6vw,68px);letter-spacing:-.025em;line-height:1.05;color:#1b1720;opacity:0;pointer-events:none}
+body.lighthome .ask{top:26vh!important;bottom:auto!important}
+@media (max-width:860px){ body.lighthome .ask{top:auto!important;bottom:16px!important} #hometitle{position:fixed;top:12vh;bottom:auto} }
+#mcost{margin:8px 18px 0 0;text-align:right;font-family:var(--mono);font-size:10px;letter-spacing:.04em;color:var(--mcost,#1d7a4a);transition:color .3s;min-height:1em}
+#mcost:empty{display:none}
 </style>
 </head>
 <body>
@@ -423,14 +431,16 @@ body.open #panel{transform:translateX(0)}
 <div class="ui brand">After Intelligence</div>
 
 <div class="ui ask">
+  <h1 id="hometitle">After Intelligence</h1>
   <form id="ask" autocomplete="off">
     <div class="askf" id="askf">
       <label for="q" style="position:absolute;left:-9999px">Ask</label>
       <input id="q" type="text" placeholder="Ask to see your AI cost">
       <select id="mdl" aria-label="AI model" title="AI model used for the environmental cost"><option value="">model…</option></select>
-      <button class="go" type="submit" id="gob">Ask</button>
+      <button class="go" type="submit" id="gob" aria-label="Ask" title="Ask"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg></button>
     </div>
   </form>
+  <p id="mcost" aria-live="polite"></p>
   <div class="chips" id="chips"></div>
 </div>
 
@@ -1021,6 +1031,7 @@ function draw(){
 
   const darkUI = sm(0.08,0.60,z) > 0.5 && lightT < 0.5;
   document.documentElement.style.setProperty("--ink", darkUI ? "#efe9f2" : "#1b1720");
+  document.documentElement.style.setProperty("--mcost", darkUI ? "#60f2a4" : "#1d7a4a");
   document.getElementById("askf").style.background = darkUI ? "rgba(255,255,255,.07)" : "rgba(255,255,255,.55)";
   document.getElementById("gob").style.background = darkUI ? "#efe9f2" : "#1b1720";
   document.getElementById("gob").style.color = darkUI ? "#15101a" : "#f4f1f6";
@@ -1764,6 +1775,9 @@ function loop(){
   try { draw(); frames++; }
   catch(e){ fail("draw(), frame " + frames, e); return; }
   const z = depth;
+  const homeA = Math.max(1 - sm(0.04, 0.30, z), lightT);
+  document.getElementById("hometitle").style.opacity = homeA.toFixed(3);
+  document.body.classList.toggle("lighthome", homeA > 0.5);
   document.getElementById("lede").style.opacity = String(1 - sm(0.04, 0.30, z));
   document.getElementById("chips").style.opacity = String(1 - sm(0.30, 0.70, z));
   try {
@@ -1867,6 +1881,17 @@ function showPromptCost(env){
 }
 document.getElementById("qcost").onclick = () => document.getElementById("vcost").click();
 /* the model list comes from the backend; its first entry is the default */
+let MODELS = [], lastQuery = "";
+function paintModelCost(env){
+  const el = document.getElementById("mcost");
+  let c = env;
+  if (!c){
+    const m = MODELS.find(x => x.id === document.getElementById("mdl").value) || MODELS[0];
+    c = m && m.short;
+  }
+  if (!c){ el.textContent = ""; return; }
+  el.textContent = `energy: ${fmtN(c.energyWh,2)} Wh \u00b7 water: ${fmtN(c.waterMl,2)} mL \u00b7 carbon: ${fmtN(c.carbonGCO2e,2)} gCO\u2082e`;
+}
 (async () => {
   const sel = document.getElementById("mdl");
   try {
@@ -1874,8 +1899,22 @@ document.getElementById("qcost").onclick = () => document.getElementById("vcost"
     if (!r.ok) throw new Error(r.status);
     const list = await r.json();
     const arr = Array.isArray(list) ? list : (list.models || []);
+    MODELS = arr;
     sel.innerHTML = arr.map(m => `<option value="${esc(m.id)}">${esc(m.label)}</option>`).join("");
   } catch(err){ sel.innerHTML = '<option value="">default model</option>'; }
+  paintModelCost();
+  sel.addEventListener("change", async () => {
+    /* real time: before a search, the model's short-prompt cost; after one, the same prompt repriced on the new model */
+    if (!lastQuery){ paintModelCost(); return; }
+    const want = sel.value, q = lastQuery;
+    try {
+      const r = await fetch("/api/cost", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({query: q, model: want || undefined})});
+      if (!r.ok) throw new Error(r.status);
+      const env = await r.json();
+      if (sel.value === want && lastQuery === q) paintModelCost(env);
+    } catch(e){ paintModelCost(); }
+  });
 })();
 /* what the backend knows about this visit: running cost totals for the open session, and who is signed in */
 let sess = null;
@@ -1900,6 +1939,8 @@ function setSession(t){
 /* put one answer on screen. Used by Ask, and to rebuild the page from a saved session. */
 function applyAsk(q, set, env, irrIdx, totals){
   matched = set;
+  lastQuery = q;
+  paintModelCost(env);
   showPromptCost(env);
   setSession(totals);
   /* the session remembers: every prompt adds to what has been surfaced, and
@@ -1964,6 +2005,7 @@ function resetView(keepLocked){
   history.length = 0; surfaced.clear();
   if (!keepLocked) locked.clear();
   showTotals = false; lightHome = false;
+  lastQuery = ""; paintModelCost();
   matched = null; sortTo = 0; sortPos.clear();
   showPromptCost(null); setSession(null); setRotAvail(false);
   const qi2 = document.getElementById("q"); qi2.value = ""; typed = 0;

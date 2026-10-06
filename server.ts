@@ -421,17 +421,33 @@ app.get('/api/incidents/:id/harmed', (req: Request, res: Response) => {
 
 app.get('/api/models', (_req: Request, res: Response<ModelOption[]>) => {
   const geminiRow = defaultGeminiRow();
+  const shortOf = (row: any): ModelOption['short'] => {
+    const c = row?.bySize?.Short;
+    return { energyWh: c?.energyWh ?? null, waterMl: c?.waterMl ?? null, carbonGCO2e: c?.carbonGCO2e ?? null };
+  };
   const options: ModelOption[] = [
     {
       id: DEFAULT_MODEL_ID,
       label: geminiRow ? `${geminiRow.label} (default)` : `Gemini – ${GEMINI_MODEL} (default)`,
       isDefault: true,
+      short: shortOf(geminiRow),
     },
     ...getModelRows()
       .filter((r) => r !== geminiRow)
-      .map((r) => ({ id: r.name, label: r.label })),
+      .map((r) => ({ id: r.name, label: r.label, short: shortOf(r) })),
   ];
   res.json(options);
+});
+
+// Price a prompt on a model without searching or recording anything.
+app.post('/api/cost', async (req: Request, res: Response) => {
+  try {
+    const query = String(req.body?.query ?? '').trim();
+    if (!query) return res.status(400).json({ error: 'query is required' });
+    res.json(await computeEnvironmental(query, req.body?.model || DEFAULT_MODEL_ID));
+  } catch (err: any) {
+    res.status(500).json({ error: 'Cost lookup failed', details: err?.message });
+  }
 });
 
 app.get('/api/health', (_req: Request, res: Response) => {

@@ -39,6 +39,8 @@ export interface ModelOption {
   id: string;
   label: string;
   isDefault?: boolean;
+  /** cost of a Short prompt for this model, from the dataset */
+  short?: { energyWh: number | null; waterMl: number | null; carbonGCO2e: number | null };
 }
 
 export interface SearchRequest {
