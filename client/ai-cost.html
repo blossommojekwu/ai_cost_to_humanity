@@ -482,7 +482,7 @@ body.lighthome .ask{top:26vh!important;bottom:auto!important}
   <form id="ask" autocomplete="off">
     <div class="askf" id="askf">
       <label for="q" style="position:absolute;left:-9999px">Ask</label>
-      <input id="q" type="text" placeholder="Ask to see your AI cost">
+      <input id="q" type="text" placeholder="What do you use AI for? See who it has harmed">
       <select id="mdl" aria-label="AI model" title="AI model used for the environmental cost"><option value="">model…</option></select>
       <button class="go" type="submit" id="gob" aria-label="Ask" title="Ask"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg></button>
     </div>
@@ -2077,8 +2077,10 @@ function applyAsk(q, set, env, irrIdx, totals){
   setRotAvail(set.size > 0);
   showTotals = false;               /* every new search shows live session counts again */
   paintKeyCounts();
-  lightHome = set.size === 0;
-  if (lightHome && !locked.size){ commit = 0; typed = 0; scrolled = 0; }
+  /* the dark virus scene stays until a search finds nothing. Then the page returns to the white homepage;
+     only if irreversible viruses are held does the scene stay (drawn light) so they remain on screen */
+  lightHome = set.size === 0 && locked.size > 0;
+  if (set.size === 0 && !locked.size){ commit = 0; typed = 0; scrolled = 0; }
   renderHistory();
   if (!set.size) document.getElementById("hline").textContent = NONE_MSG;
 }
