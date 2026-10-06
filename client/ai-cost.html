@@ -155,6 +155,19 @@ body.open #panel{transform:translateX(0)}
   z-index:2}
 #close:focus-visible{outline:2px solid #8f7f92;outline-offset:2px}
 #close:hover{opacity:1}
+/* on the light homepage the record takes the light styling too */
+#panel,#close{transition:transform .42s cubic-bezier(.22,1,.36,1),background-color .3s,color .3s}
+body.lighthome #panel{background:#fbf9fc;color:#1b1720;border-left-color:rgba(27,23,32,.12);box-shadow:-18px 0 50px rgba(40,25,60,.08)}
+body.lighthome #close{background:#fbf9fc}
+body.lighthome #panel .tg{border-color:rgba(27,23,32,.22)}
+body.lighthome .mrow .tk{background:rgba(27,23,32,.1)}
+body.lighthome .mrow i{color:#a8741a}
+body.lighthome .rel{border-top-color:rgba(27,23,32,.12)}
+body.lighthome #panel .sev{filter:brightness(.72) saturate(1.15)}
+body.lighthome #panel .sev .si{color:#1b1720}
+body.lighthome #panel .meta[style*="f0ebe0"]{color:#7a1f1f!important}
+body.lighthome #panel .body.scroll{scrollbar-color:rgba(27,23,32,.35) transparent}
+body.lighthome #panel .body.scroll::-webkit-scrollbar-thumb{background:rgba(27,23,32,.3)}
 
 #err{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:99;max-width:min(80vw,620px);
   background:#1a1014;color:#f6e9ec;border:1px solid rgba(226,96,127,.5);border-radius:4px;padding:18px 20px;
