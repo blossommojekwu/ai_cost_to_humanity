@@ -140,6 +140,24 @@ body.open #panel{transform:translateX(0)}
   font-family:var(--mono);font-size:10px}
 .mrow .tk{height:5px;background:rgba(255,255,255,.1);border-radius:1px;overflow:hidden}
 .mrow .tk b{display:block;height:100%}
+.mrow.sevrow{position:relative;cursor:help;outline:none}
+.mrow.sevrow>span:first-child{text-decoration:underline dotted;text-underline-offset:3px;text-decoration-color:rgba(150,140,150,.6)}
+.sevmap{position:absolute;left:0;right:0;width:auto;top:calc(100% + 6px);z-index:5;background:#1b1520;color:#efe9f2;
+  border:1px solid rgba(255,255,255,.16);border-radius:8px;padding:10px 12px;box-shadow:0 14px 36px rgba(0,0,0,.35);
+  font-family:var(--mono);font-size:10px;line-height:1.55;letter-spacing:.01em;text-align:left;
+  opacity:0;visibility:hidden;transform:translateY(-3px);pointer-events:none;transition:opacity .15s,transform .15s,visibility .15s}
+.mrow.sevrow:hover .sevmap,.mrow.sevrow:focus-visible .sevmap{opacity:1;visibility:visible;transform:none}
+.sevmap div{padding:5px 0;border-top:1px solid rgba(255,255,255,.1);opacity:.62}
+.sevmap div:first-child{border-top:0;padding-top:0}
+.sevmap div:last-child{padding-bottom:0}
+.sevmap div.cur{opacity:1}
+.sevmap div.ttl{opacity:1}
+.sevmap div.ttl b{color:inherit;display:block;margin-bottom:2px}
+.sevmap b{display:block;font-weight:500;letter-spacing:.14em;text-transform:uppercase;margin-bottom:1px;color:var(--sc)}
+body.lighthome .sevmap{background:#fbf9fc;color:#1b1720;border-color:rgba(27,23,32,.16);box-shadow:0 14px 36px rgba(40,25,60,.16)}
+body.lighthome .sevmap div{border-top-color:rgba(27,23,32,.12)}
+body.lighthome .sevmap b{filter:brightness(.72) saturate(1.15)}
+body.lighthome .sevmap div.ttl b{filter:none}
 .mrow .vv{text-align:right;opacity:.7;font-variant-numeric:tabular-nums}
 .mrow i{font-style:normal;color:#d9a53a}
 .rel{display:block;width:100%;text-align:left;background:none;cursor:pointer;color:inherit;
@@ -602,6 +620,42 @@ const BAND = {1:"Minor", 2:"Moderate", 3:"Serious", 4:"Severe", 5:"Catastrophic"
 const bandOf = s => BAND[Math.max(1, Math.min(5, Math.round(s)))] || "";
 /* a warm ramp for severity, kept clear of the five wellbeing hues */
 const SEVC = {1:"#e8d9a0", 2:"#f2c14e", 3:"#f59a3d", 4:"#f2603c", 5:"#ff3b3b"};
+/* what each severity band means in the coding scheme */
+const SEVMAP = {
+  5:"death \u00b7 completed suicide \u00b7 mass casualty (air strike, drone strike, military targeting) \u00b7 wrongful imprisonment or conviction \u00b7 child sexual abuse material",
+  4:"serious injury \u00b7 self-harm risk \u00b7 wrongful arrest, detention or deportation \u00b7 non-consensual intimate imagery \u00b7 lost livelihood \u00b7 benefits or care denied \u00b7 election integrity \u00b7 institutional decision (recidivism, triage, eligibility, predictive policing)",
+  3:"financial loss \u00b7 defamation \u00b7 unequal error rates \u00b7 discrimination \u00b7 biometric or privacy violation \u00b7 clinical error \u00b7 impersonation",
+  2:"offensive output \u00b7 misinformation \u00b7 service failure \u00b7 consent"
+};
+/* the irreversibility scale: the words that put an incident at each level */
+const IRRMAP = {
+  5:"died \u00b7 death \u00b7 killed \u00b7 fatal \u00b7 suicide \u00b7 permanent \u00b7 irreversible \u00b7 amputation \u00b7 paralysis \u00b7 brain damage \u00b7 life-changing",
+  4:"defraud \u00b7 stole \u00b7 lost savings/job/home \u00b7 fired \u00b7 evict \u00b7 deport \u00b7 wrongful arrest or conviction \u00b7 non-consensual \u00b7 nude \u00b7 explicit \u00b7 CSAM",
+  3:"defamation \u00b7 reputation \u00b7 discrimination \u00b7 denied \u00b7 rejected \u00b7 banned \u00b7 suspended \u00b7 fine \u00b7 overcharge \u00b7 breach \u00b7 leak",
+  2:"embarrass \u00b7 offend \u00b7 upset \u00b7 insult \u00b7 annoy \u00b7 inconvenience \u00b7 delay",
+  1:"misinformation \u00b7 inaccurate \u00b7 misleading \u00b7 wrong answer \u00b7 hallucination \u00b7 error \u00b7 glitch \u00b7 outage"
+};
+/* breadth: how many people an incident reached, by the words that set each value */
+const BRMAP = {
+  5:"millions \u00b7 population \u00b7 worldwide \u00b7 the public \u00b7 voters",
+  4.4:"thousands \u00b7 citywide \u00b7 nationwide \u00b7 all users",
+  3.4:"hundreds \u00b7 staff \u00b7 a school \u00b7 a company",
+  2.4:"several \u00b7 dozens \u00b7 a family",
+  1.4:"a single named victim"
+};
+const CGMAP = {
+  4.6:"non-consensual \u00b7 without knowledge \u00b7 unaware \u00b7 bystander \u00b7 impersonation \u00b7 deepfake \u00b7 scam \u00b7 surveillance \u00b7 scraped",
+  2.6:"a customer \u00b7 applicant \u00b7 employee \u00b7 patient \u00b7 student \u00b7 driver",
+  1.8:"a self-identified user who asked or prompted the system"
+};
+const HOVERMAP = {
+  s:{levels:[5,4,3,2], text:SEVMAP, name:n => BAND[n], label:"Severity"},
+  cg:{levels:[4.6,2.6,1.8], text:CGMAP, name:n => "", label:"Consent gap", fmt:n => n.toFixed(1),
+      cur:v => [4.6,2.6,1.8].find(n => Math.abs(n-v) < 0.15) ?? v},
+  irr:{levels:[5,4,3,2,1], text:IRRMAP, name:n => "", label:"Irreversibility"},
+  br:{levels:[5,4.4,3.4,2.4,1.4], text:BRMAP, name:n => "", label:"Breadth", fmt:n => n.toFixed(1),
+      cur:v => [5,4.4,3.4,2.4,1.4].reduce((a,b) => Math.abs(b-v) < Math.abs(a-v) ? b : a)}
+};
 
 /* the layout is a three-dimensional force solve over the similarity graph,
    already centred and fitted; every incident has a real z */
@@ -2193,8 +2247,23 @@ function openPanel(idx){
   const rel = (ADJ.get(idx) || []).slice().sort((a,b) => b[1]-a[1]).slice(0,5);
   const bars = MET.map(([nm,k,mx]) => {
     const v = s[k]; if (v == null) return "";
-    return `<div class="mrow"><span>${nm}</span><span class="tk"><b style="width:${(100*v/mx).toFixed(0)}%;
-      background:rgb(${CORE[s.d]})"></b></span><span class="vv">${v.toFixed(1)}</span></div>`;
+    let attrs = "", pop = "";
+    const hm = HOVERMAP[k];
+    if (k === "at"){
+      const maxRc = Math.max(...SPIKES.map(x => x.rc || 0));
+      attrs = ` tabindex="0" aria-label="Attention: 1 + 4 \u00d7 log1p(report_count) / log1p(max report_count)"`;
+      pop = `<div class="sevmap" role="tooltip"><div class="cur ttl" style="--sc:rgb(${CORE[s.d]})"><b>Attention</b>1 + 4 \u00d7 log1p(report_count) / log1p(max report_count)<br>this incident: ${s.rc ?? "?"} reports \u00b7 max ${maxRc}</div></div>`;
+    }
+    if (hm){
+      const cur = hm.cur ? hm.cur(v) : Math.max(1, Math.min(5, Math.round(v)));
+      const fm = hm.fmt || (n => String(n));
+      const nm2 = n => (fm(n) + " " + hm.name(n)).trim();
+      attrs = ` tabindex="0" aria-label="${hm.label} ${fm(cur)}${hm.name(cur) ? ", " + esc(hm.name(cur)) : ""}: ${esc(hm.text[cur] || "")}"`;
+      pop = `<div class="sevmap" role="tooltip"><div class="cur ttl" style="--sc:rgb(${CORE[s.d]})"><b>${esc(hm.label)}</b></div>` + hm.levels.map(n =>
+        `<div class="${n === cur ? "cur" : ""}" style="--sc:${SEVC[Math.round(n)]}"><b>${esc(nm2(n))}</b>${esc(hm.text[n])}</div>`).join("") + `</div>`;
+    }
+    return `<div class="mrow${hm || k === "at" ? " sevrow" : ""}"${attrs}><span>${nm}</span><span class="tk"><b style="width:${(100*v/mx).toFixed(0)}%;
+      background:rgb(${CORE[s.d]})"></b></span><span class="vv">${v.toFixed(1)}</span>${pop}</div>`;
   }).join("");
   document.getElementById("pbody").innerHTML = `
     <p class="kicker">${esc(DIMS[s.d])} &middot; incident ${s.id}</p>
