@@ -9,7 +9,8 @@
     "client": "cd client && npm run dev",
     "server:dev": "tsx watch server.ts",
     "server": "node dist/server.js",
-    "build": "tsc && cd client && npm run build",
+    "start": "node dist/server.js",
+    "build": "tsc && npm --prefix client install --include=dev && npm --prefix client run build:web",
     "build:server": "tsc"
   },
   "keywords": [],

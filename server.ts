@@ -38,6 +38,7 @@ const DATA_PATH = path.join(ROOT, 'data', 'ai_incidents.json');
 const EMBEDDINGS_PATH = path.join(ROOT, 'data', 'embeddings.json');
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 5000;
 
 const apiKey = process.env.GEMINI_API_KEY;
@@ -553,6 +554,31 @@ app.post('/api/embeddings/rebuild', (_req: Request, res: Response) => {
   void buildEmbeddings();
   res.json({ status: 'started', embedded: embeddings.size, total: incidents.length });
 });
+
+// ---------------------------------------------------------------------------
+// Front end: serve the built page (client/dist) so "/" works when deployed
+// ---------------------------------------------------------------------------
+const CLIENT_DIST = path.join(ROOT, 'client', 'dist');
+if (fs.existsSync(path.join(CLIENT_DIST, 'ai-cost.html'))) {
+  app.use(
+    express.static(CLIENT_DIST, {
+      index: false,
+      setHeaders: (res, file) => {
+        // hashed build assets never change; the page itself must revalidate
+        res.setHeader(
+          'Cache-Control',
+          file.includes(`${path.sep}assets${path.sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache'
+        );
+      },
+    })
+  );
+  app.get('/', (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(path.join(CLIENT_DIST, 'ai-cost.html'));
+  });
+} else {
+  console.warn(`No built front end at ${CLIENT_DIST}; run "npm run build". API only.`);
+}
 
 // ---------------------------------------------------------------------------
 // Start
