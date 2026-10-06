@@ -92,15 +92,15 @@ body.open .hist{opacity:0;pointer-events:none}
 .rng .rv{letter-spacing:.06em;text-transform:none;opacity:.92;font-size:10px}
 .rng .rt{position:relative;height:16px}
 .rng .bar{position:absolute;top:7px;left:0;right:0;height:2px;border-radius:2px;
-  background:currentColor;opacity:.16}
-.rng .sel{position:absolute;top:7px;height:2px;border-radius:2px;background:currentColor;opacity:.72}
-.rng input[type=range]{position:absolute;top:0;left:0;width:100%;height:16px;margin:0;
+  background:currentColor;opacity:.3}
+.rng .sel{position:absolute;top:7px;height:2px;border-radius:2px;background:currentColor;opacity:.9}
+.rng input[type=range]{position:absolute;top:0;left:0;width:100%;height:16px;margin:0;color:inherit;
   background:none;pointer-events:none;-webkit-appearance:none;appearance:none}
 .rng input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;pointer-events:auto;
-  width:11px;height:11px;border-radius:50%;background:currentColor;cursor:ew-resize;
-  border:2px solid rgba(0,0,0,.25);margin-top:0}
-.rng input[type=range]::-moz-range-thumb{pointer-events:auto;width:11px;height:11px;
-  border-radius:50%;background:currentColor;cursor:ew-resize;border:2px solid rgba(0,0,0,.25)}
+  width:12px;height:12px;border-radius:50%;background:currentColor;cursor:ew-resize;
+  border:1.5px solid rgba(150,140,158,.85);margin-top:0;box-shadow:0 0 0 1px rgba(0,0,0,.35)}
+.rng input[type=range]::-moz-range-thumb{pointer-events:auto;width:12px;height:12px;
+  border-radius:50%;background:currentColor;cursor:ew-resize;border:1.5px solid rgba(150,140,158,.85);box-shadow:0 0 0 1px rgba(0,0,0,.35)}
 .rng input[type=range]::-webkit-slider-runnable-track{height:16px;background:none}
 .rng input[type=range]::-moz-range-track{height:16px;background:none}
 .rng input[type=range]:focus-visible::-webkit-slider-thumb{outline:2px solid #8f7f92;outline-offset:2px}
@@ -436,7 +436,6 @@ body.open #panel{transform:translateX(0)}
 
 <div class="ui hist">
   <p class="hline" id="hline">nothing built yet &middot; scroll in, or type a prompt</p>
-  <p class="hline" id="sortline" style="opacity:.55"></p>
   <p class="hline" id="qcost" style="opacity:.9;cursor:pointer" hidden></p>
   <div class="hchips" id="hchips"></div>
   <button class="cs" id="closesess" type="button" hidden title="End this session">Close session</button>
@@ -920,6 +919,8 @@ let depth = 0, target = 0, typed = 0, commit = 0;
    was made of. Once a prompt lands, commit takes over and the wheel goes back
    to being the camera. */
 let scrolled = 0;
+/* a search that finds nothing returns to the light page; held (irreversible) viruses stay on it */
+let lightHome = false, lightT = 0;
 /* what the session has done: every prompt, everything it surfaced, and the
    irreversible incidents, which are never allowed to leave the screen again */
 const history = [], surfaced = new Set(), locked = new Set();
@@ -1018,7 +1019,7 @@ function draw(){
     cx.save(); cx.globalAlpha = medium; cx.drawImage(mediumCv, 0, 0); cx.restore();
   }
 
-  const darkUI = sm(0.08,0.60,z) > 0.5;
+  const darkUI = sm(0.08,0.60,z) > 0.5 && lightT < 0.5;
   document.documentElement.style.setProperty("--ink", darkUI ? "#efe9f2" : "#1b1720");
   document.getElementById("askf").style.background = darkUI ? "rgba(255,255,255,.07)" : "rgba(255,255,255,.55)";
   document.getElementById("gob").style.background = darkUI ? "#efe9f2" : "#1b1720";
@@ -1749,6 +1750,10 @@ function loop(){
   }
   target = Math.max(commit, typed, scrolled);
   depth += (target - depth) * (reduce ? 1 : 0.06);
+  lightT += ((lightHome ? 1 : 0) - lightT) * (reduce ? 1 : 0.06);
+  if (Math.abs(lightT - (lightHome ? 1 : 0)) < 0.003) lightT = lightHome ? 1 : 0;
+  /* the scene is drawn for a dark field; inverting it gives the light page with the viruses still on it */
+  cv.style.filter = lightT > 0 ? `invert(${lightT.toFixed(3)}) hue-rotate(${(180*lightT).toFixed(1)}deg)` : "";
   sortT += (sortTo - sortT) * (reduce ? 1 : 0.026);
   const ez = reduce ? 1 : 0.11;
   yaw += (yawTo - yaw)*ez; pitch += (pitchTo - pitch)*ez; roll += (rollTo - roll)*ez;
@@ -1825,6 +1830,24 @@ function preview(q){
   /* relatedness comes from the Gemini embedding backend, and only on Ask */
 }
 const ID2IDX = new Map(ITEMS.map((x,i) => [x.i, i]));
+/* the numbers beside each layer are what is on screen from this session (surfaced + held viruses);
+   the archive-wide totals only appear after the Reveal button is pressed */
+let showTotals = false;
+function paintKeyCounts(){
+  const btns = document.querySelectorAll("#key .kr");
+  if (!btns.length) return;
+  const vis = new Set([...surfaced, ...locked]);
+  const perDim = SHORT.map(() => 0);
+  for (const j of vis) perDim[SPIKES[j].d]++;
+  const hasSession = vis.size > 0;
+  btns.forEach(b => {
+    const kn = b.querySelector(".kn"); if (!kn) return;
+    let n = null;
+    if (b.dataset.e) n = showTotals ? ENERGY_N : (surfaced.size || null);
+    else n = showTotals ? ITEMS.filter(x => x.d === +b.dataset.i).length : (hasSession ? perDim[+b.dataset.i] : null);
+    kn.textContent = n == null ? "" : String(n);
+  });
+}
 let askSeq = 0;
 const NONE_MSG = "No AI incidents have been linked to your request. There may not be an existential cost to humanity";
 const fmtN = (v, d) => v == null ? "\u2014" : (v >= 100 ? v.toFixed(0) : v.toFixed(d));
@@ -1876,7 +1899,6 @@ function setSession(t){
 }
 /* put one answer on screen. Used by Ask, and to rebuild the page from a saved session. */
 function applyAsk(q, set, env, irrIdx, totals){
-  const sl = document.getElementById("sortline");
   matched = set;
   showPromptCost(env);
   setSession(totals);
@@ -1899,14 +1921,18 @@ function applyAsk(q, set, env, irrIdx, totals){
   setDist(Math.max(2.6, Math.min(3.40, 2.6 + 0.42*Math.sqrt(set.size/60))));
   const parts = byDim.map((n,d) => n ? `${SHORT[d].toLowerCase()} ${n}` : null).filter(Boolean);
   if (eg.n) parts.push(`environmental cost ${eg.n}${ENERGY_MEASURED ? "" : "*"}`);
-  sl.textContent = set.size ? (parts.length ? "sorted \u00b7 " + parts.join(" \u00b7 ") : "") : NONE_MSG;
   setRotAvail(set.size > 0);
+  showTotals = false;               /* every new search shows live session counts again */
+  paintKeyCounts();
+  lightHome = set.size === 0;
+  if (lightHome && !locked.size){ commit = 0; typed = 0; scrolled = 0; }
   renderHistory();
+  if (!set.size) document.getElementById("hline").textContent = NONE_MSG;
 }
 async function ask(q){
   if (!q.trim()){ matched = null; setEyebrow(); return; }
   const seq = ++askSeq;
-  const gob = document.getElementById("gob"), sl = document.getElementById("sortline");
+  const gob = document.getElementById("gob"), sl = document.getElementById("hline");
   gob.disabled = true; sl.textContent = "asking\u2026";
   let data;
   try {
@@ -1937,10 +1963,10 @@ function resetView(keepLocked){
   askSeq++;
   history.length = 0; surfaced.clear();
   if (!keepLocked) locked.clear();
+  showTotals = false; lightHome = false;
   matched = null; sortTo = 0; sortPos.clear();
   showPromptCost(null); setSession(null); setRotAvail(false);
   const qi2 = document.getElementById("q"); qi2.value = ""; typed = 0;
-  document.getElementById("sortline").textContent = "";
   document.getElementById("hchips").innerHTML = "";
   document.getElementById("gob").disabled = false;
   setEyebrow(); renderHistory();
@@ -1967,7 +1993,7 @@ function restoreFromServer(st){
     applyAsk(sd.last.text, set, sd.last.environmental, [], sd);
   } else {
     setSession(null); showPromptCost(null); setEyebrow(); renderHistory();
-    if (locked.size) commit = 1;
+    if (locked.size){ commit = 1; lightHome = true; }
   }
 }
 /* the opening affordance: say both ways in, and show the wheel working */
@@ -1980,6 +2006,7 @@ function hint(){
        : `resolving · ${Math.round(scrolled*100)}%`);
 }
 function renderHistory(){
+  paintKeyCounts();
   const hl = document.getElementById("hline");
   if (!history.length){ hint(); return; }
   let held = 0;
@@ -2125,7 +2152,7 @@ document.getElementById("vlite").onclick = e => {
   lite = (lite + 1) % 3;
   e.target.textContent = "detail: " + ["full","medium","low"][lite];
 };
-document.getElementById("vreveal").onclick = () => { commit = 1; typed = Math.max(typed, 1); scrolled = 1; };
+document.getElementById("vreveal").onclick = () => { commit = 1; typed = Math.max(typed, 1); scrolled = 1; showTotals = true; paintKeyCounts(); };
 document.getElementById("vhome").onclick  = () => { view(0.30, -0.17, 0); setDist(DIST0); panXTo = panYTo = 0; fxTo = fyTo = fzTo = 0; };
 addEventListener("keydown", e => {
   if (e.key === "Escape") closePanel();
@@ -2225,7 +2252,6 @@ qi.addEventListener("input", () => {
   if (!qi.value.trim()){
     matched = null; setEyebrow();
     sortTo = 0; sortPos.clear();
-    document.getElementById("sortline").textContent = "";
   }
 });
 document.getElementById("ask").onsubmit = e => {
@@ -2251,14 +2277,15 @@ document.getElementById("chips").onclick = e => {
 };
 const key = document.getElementById("key");
 key.insertAdjacentHTML("beforeend", SHORT.map((s,i) =>
-  `<button class="kr" data-i="${i}"><span>${s} ${ITEMS.filter(x => x.d === i).length}</span>
+  `<button class="kr" data-i="${i}"><span>${s} <span class="kn"></span></span>
     <b style="background:rgb(${CORE[i]})"></b></button>`).join("")
   /* the energy layer is not a seventh dimension of harm — it is a load that
      rides the other six — so it gets its own switch and its own glyph */
   + `<button class="kr ph" data-e="1" title="${ENERGY_MEASURED
         ? "measured environmental cost" : "proxy \u2014 awaiting the measured dataset"}">
-      <span>Environmental cost ${ENERGY_N}${ENERGY_MEASURED ? "" : "<i>*</i>"}</span>
+      <span>Environmental cost <span class="kn"></span>${ENERGY_MEASURED ? "" : "<i>*</i>"}</span>
       <b class="phg"></b></button>`);
+paintKeyCounts();
 key.onclick = e => {
   const b = e.target.closest(".kr"); if (!b) return;
   if (b.dataset.e){
@@ -2383,7 +2410,7 @@ requestAnimationFrame(loop);
 
   /* Close session: ends it. Guests lose their data; users keep their held incidents. */
   $("closesess").onclick = async () => {
-    try { await api("/api/session/close", "POST"); } catch(e){ $("sortline").textContent = "could not close the session: " + e.message; return; }
+    try { await api("/api/session/close", "POST"); } catch(e){ $("hline").textContent = "could not close the session: " + e.message; return; }
     resetView(!acct.guest);
   };
 })();
@@ -2605,7 +2632,7 @@ requestAnimationFrame(loop);
     close();
     if (!confirm("Delete your prompt history?\n\nIncidents that cannot be undone stay on screen.")) return;
     try { await window.pbApi("/api/history", "DELETE"); }
-    catch(e){ $("sortline").textContent = "could not delete history: " + e.message; return; }
+    catch(e){ $("hline").textContent = "could not delete history: " + e.message; return; }
     resetView(true);
   };
 
