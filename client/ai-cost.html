@@ -1055,7 +1055,7 @@ const SMAX = Math.max(...ITEMS.map(x => x.s));
 let yLo = YMIN, yHi = YMAX, sLo = SMIN, sHi = SMAX;
 const passes = s =>
   !hidden.has(s.d) && s.y >= yLo && s.y <= yHi && s.s >= sLo - 1e-9 && s.s <= sHi + 1e-9
-  && (regSel === null || REGION_OF[s.i] === regSel);
+  && (regSel === null || REGION_OF[s.id] === regSel);
 
 /* ---------- drawing ---------- */
 function draw(){
@@ -1743,7 +1743,7 @@ function draw(){
     const slot = document.getElementById("axslot"), sr2 = slot ? slot.getBoundingClientRect() : null;
     if (sr2 && sr2.width > 0){ gx = sr2.left + sr2.width/2; gy = sr2.top + sr2.height/2; gl = 25; }
     const AXC = document.documentElement.style.getPropertyValue("--ink").trim() === "#1b1720" ? "60,50,70" : "206,200,210";
-    const AX = [[[1,0,0],"x"],[[0,1,0],"y"],[[0,0,1],"time"]];
+    const AX = [[[1,0,0],"x"],[[0,1,0],"y"],[[0,0,1],(matched || history.length) ? "z" : "time"]];
     cx.font = "400 9px 'IBM Plex Mono', monospace";
     cx.textAlign = "center"; cx.textBaseline = "middle";
     for (const [v,nm] of AX){
@@ -2360,6 +2360,8 @@ function pick(ev){
   for (const h of hs){
     const d2 = (h.x-ev.clientX)**2 + (h.y-ev.clientY)**2;
     if (d2 >= (h.r+10)**2) continue;
+    /* anything the date, severity, dimension or region filters hide cannot be hovered or clicked */
+    if (!passes(h.s)) continue;
     /* once a prompt has been asked, only incidents related to it (or held on screen) can be picked */
     if (matched && !matched.has(h.s.i) && !locked.has(h.s.i)) continue;
     if (h.ph){ if (d2 < pd){ pd = d2; ph = h; } }
@@ -2452,7 +2454,7 @@ key.insertAdjacentHTML("beforeend", SHORT.map((s,i) =>
      rides the other six — so it gets its own switch and its own glyph */
   + `<button class="kr ph" data-e="1" title="${ENERGY_MEASURED
         ? "measured environmental cost" : "proxy \u2014 awaiting the measured dataset"}">
-      <span>Environmental cost <span class="kn"></span>${ENERGY_MEASURED ? "" : "<i>*</i>"}</span>
+      <span>Environmental cost <span class="kn"></span></span>
       <b class="phg"></b></button>`);
 paintKeyCounts();
 key.onclick = e => {
@@ -2805,16 +2807,11 @@ requestAnimationFrame(loop);
     resetView(true);
   };
 
-  /* environmental cost joins the wellbeing dimensions, with an info button for its pop-up */
+  /* environmental cost joins the wellbeing dimensions */
   const ph = document.querySelector("#key .kr.ph");
   if (ph){
     const row = document.createElement("div"); row.className = "krow";
     ph.before(row); row.append(ph);
-    const i = document.createElement("button");
-    i.className = "kinfo"; i.type = "button"; i.textContent = "i";
-    i.setAttribute("aria-label","About the environmental cost"); i.title = "About the environmental cost";
-    i.onclick = e => { e.stopPropagation(); $("vcost").click(); };
-    row.append(i);
   }
 })();
 </script>
