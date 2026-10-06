@@ -122,6 +122,11 @@ body.open #panel{transform:translateX(0)}
   opacity:.5;margin:0;padding-right:34px}
 #panel h2{font-weight:500;font-size:19px;line-height:1.25;letter-spacing:-.01em;margin:10px 0 0}
 #panel .meta{font-family:var(--mono);font-size:10.5px;line-height:1.9;opacity:.62;margin:12px 0 0}
+#panel .sev{display:flex;align-items:baseline;gap:12px;margin:16px 0 0;color:var(--sc)}
+#panel .sev .sn{font-family:var(--mono);font-size:40px;line-height:1;font-weight:400;letter-spacing:-.03em}
+#panel .sev .sd{font-family:var(--mono);font-size:13px;opacity:.6;margin-left:-8px}
+#panel .sev .sb{font-family:var(--mono);font-size:12px;letter-spacing:.2em;text-transform:uppercase;font-weight:500}
+#panel .sev .si{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;opacity:.7;color:#efe9f2}
 #panel .body{font-size:13.5px;line-height:1.62;margin:16px 0 0;opacity:.88}
 #panel .body.scroll{max-height:9.5em;overflow-y:auto;padding-right:8px;scrollbar-width:thin;scrollbar-color:rgba(150,140,150,.55) transparent}
 #panel .body.scroll::-webkit-scrollbar{width:6px}
@@ -538,6 +543,8 @@ const SHORT = ["Physical","Financial","Emotional","Social","Intellectual"];
    bands, and a band is what the record actually asserts */
 const BAND = {1:"Minor", 2:"Moderate", 3:"Serious", 4:"Severe", 5:"Catastrophic"};
 const bandOf = s => BAND[Math.max(1, Math.min(5, Math.round(s)))] || "";
+/* a warm ramp for severity, kept clear of the five wellbeing hues */
+const SEVC = {1:"#e8d9a0", 2:"#f2c14e", 3:"#f59a3d", 4:"#f2603c", 5:"#ff3b3b"};
 
 /* the layout is a three-dimensional force solve over the similarity graph,
    already centred and fitted; every incident has a real z */
@@ -2085,8 +2092,12 @@ function openPanel(idx){
   document.getElementById("pbody").innerHTML = `
     <p class="kicker">${esc(DIMS[s.d])} &middot; incident ${s.id}</p>
     <h2>${esc(s.t)}</h2>
-    ${locked.has(s.i) ? '<p class="meta" style="opacity:1;color:#f0ebe0">Held on screen &mdash; the harm in this one cannot be undone.</p>' : ''}
-    <p class="meta">${s.y} &middot; severity ${Math.round(s.s)} ${esc(bandOf(s.s))}${s.sl ? " (institutional scale)" : ""} &middot; harm weight ${s.h.toFixed(2)}
+    ${locked.has(s.i) ? '<p class="meta" style="opacity:1;color:#f0ebe0">Held on screen &mdash; the harm in this incident cannot be undone.</p>' : ''}
+    <div class="sev" style="--sc:${SEVC[Math.max(1, Math.min(5, Math.round(s.s)))]}">
+      <span class="sn">${Math.round(s.s)}</span><span class="sd">/5</span>
+      <span class="sb">${esc(bandOf(s.s))}</span>${s.sl ? '<span class="si">institutional scale</span>' : ''}
+    </div>
+    <p class="meta">${s.y} &middot; harm weight ${s.h.toFixed(2)}
       <br>${s.dev ? esc(s.dev) + " &middot; " : ""}${s.rc} report${s.rc==1?"":"s"}
       &middot; ${esc(s.cf)} confidence</p>
     <p class="body" id="descbody">${esc(s.b || "")}${(s.b || "").length >= 299 ? "…" : ""}</p>
