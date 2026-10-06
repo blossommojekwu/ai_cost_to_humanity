@@ -204,6 +204,15 @@ body.open #panel{transform:translateX(0)}
 .cs{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;padding:7px 13px;border-radius:999px;
   cursor:pointer;background:none;color:inherit;border:1px solid rgba(150,140,150,.5);margin-top:10px;opacity:.85}
 .cs:hover{opacity:1;border-color:currentColor}
+.rot{left:50%;bottom:22px;transform:translateX(-50%);display:flex;gap:0;border:1px solid rgba(150,140,150,.5);border-radius:999px;
+  overflow:hidden;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);z-index:6}
+.rot[hidden]{display:none}
+.rot button{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;padding:9px 16px;cursor:pointer;
+  background:none;color:inherit;border:0;opacity:.55}
+.rot button + button{border-left:1px solid rgba(150,140,150,.4)}
+.rot button:hover{opacity:1}
+.rot button.on{opacity:1;background:rgba(150,140,150,.22)}
+@media (max-width:860px){ .rot{bottom:78px} }
 #scost{margin:14px 0 0;padding:12px 14px;border:1px solid rgba(255,255,255,.14);border-radius:10px;font-family:var(--mono);font-size:12px;line-height:1.6}
 #scost b{font-weight:600}
 #scost .pm{display:flex;gap:18px;flex-wrap:wrap;margin-top:6px}
@@ -431,6 +440,11 @@ body.open #panel{transform:translateX(0)}
   <p class="hline" id="qcost" style="opacity:.9;cursor:pointer" hidden></p>
   <div class="hchips" id="hchips"></div>
   <button class="cs" id="closesess" type="button" hidden title="End this session">Close session</button>
+</div>
+
+<div class="ui rot" id="rot" role="group" aria-label="Auto-rotate" hidden>
+  <button type="button" id="rotpause" title="Pause rotation">&#10074;&#10074; Pause</button>
+  <button type="button" id="rotplay" title="Resume rotation">&#9654; Resume</button>
 </div>
 
 <div class="ui key" id="key"><p class="klabel">wellbeing dimensions</p></div>
@@ -1728,6 +1742,11 @@ function fail(where, e){
 let frames = 0;
 function loop(){
   phase += 0.016;
+  /* auto-rotate: only once a search has put viruses on screen, and never while the user is dragging */
+  if (rotAvail && rotOn && !dragging && !reduce){
+    yawTo += 0.0035;
+    if (yawTo > 6.2832){ yawTo -= 6.2832; yaw -= 6.2832; }
+  }
   target = Math.max(commit, typed, scrolled);
   depth += (target - depth) * (reduce ? 1 : 0.06);
   sortT += (sortTo - sortT) * (reduce ? 1 : 0.026);
@@ -1838,6 +1857,18 @@ document.getElementById("qcost").onclick = () => document.getElementById("vcost"
 /* what the backend knows about this visit: running cost totals for the open session, and who is signed in */
 let sess = null;
 let acct = {guest: true, username: null};
+/* auto-rotate: offered once a search has rendered viruses; pause/resume at the bottom centre */
+let rotAvail = false, rotOn = true;
+function paintRot(){
+  document.getElementById("rot").hidden = !rotAvail;
+  document.getElementById("rotpause").classList.toggle("on", !rotOn);
+  document.getElementById("rotplay").classList.toggle("on", rotOn);
+  document.getElementById("rotpause").setAttribute("aria-pressed", String(!rotOn));
+  document.getElementById("rotplay").setAttribute("aria-pressed", String(rotOn));
+}
+document.getElementById("rotpause").onclick = () => { rotOn = false; paintRot(); };
+document.getElementById("rotplay").onclick  = () => { rotOn = true;  paintRot(); };
+function setRotAvail(on){ rotAvail = on; paintRot(); }
 function setSession(t){
   sess = t && t.promptCount > 0 ? t : null;
   /* Close session appears once a prompt has actually been asked */
@@ -1869,6 +1900,7 @@ function applyAsk(q, set, env, irrIdx, totals){
   const parts = byDim.map((n,d) => n ? `${SHORT[d].toLowerCase()} ${n}` : null).filter(Boolean);
   if (eg.n) parts.push(`environmental cost ${eg.n}${ENERGY_MEASURED ? "" : "*"}`);
   sl.textContent = set.size ? (parts.length ? "sorted \u00b7 " + parts.join(" \u00b7 ") : "") : NONE_MSG;
+  setRotAvail(set.size > 0);
   renderHistory();
 }
 async function ask(q){
@@ -1906,7 +1938,7 @@ function resetView(keepLocked){
   history.length = 0; surfaced.clear();
   if (!keepLocked) locked.clear();
   matched = null; sortTo = 0; sortPos.clear();
-  showPromptCost(null); setSession(null);
+  showPromptCost(null); setSession(null); setRotAvail(false);
   const qi2 = document.getElementById("q"); qi2.value = ""; typed = 0;
   document.getElementById("sortline").textContent = "";
   document.getElementById("hchips").innerHTML = "";
@@ -1968,8 +2000,8 @@ document.getElementById("hchips").onclick = e => {
 function setEyebrow(){ document.getElementById("eyebrow").textContent = `${NTOT} incidents · one model`; }
 
 /* ---------- the record, on the right ---------- */
-const MET = [["Severity","s",5],["Irreversibility","irr",5],["Breadth","br",5],["Vulnerability","vu",5],
-             ["Consent gap","cg",5],["Invisibility","iv",5],["Accountability","ag",5],["Attention","at",5]];
+const MET = [["Severity","s",5],["Irreversibility","irr",5],["Breadth","br",5],
+             ["Consent gap","cg",5],["Attention","at",5]];
 const esc = t => String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;");
 function openPanel(idx){
   const s = SPIKES.find(x => x.i === idx);
@@ -1980,11 +2012,7 @@ function openPanel(idx){
     const v = s[k]; if (v == null) return "";
     return `<div class="mrow"><span>${nm}</span><span class="tk"><b style="width:${(100*v/mx).toFixed(0)}%;
       background:rgb(${CORE[s.d]})"></b></span><span class="vv">${v.toFixed(1)}</span></div>`;
-  }).join("")
-  /* the environmental cost this incident carries, named as a proxy while it is one */
-  + (s.nph ? `<div class="mrow"><span>Environmental cost${ENERGY_MEASURED ? "" : "<i>*</i>"}</span>
-      <span class="tk"><b style="width:${(100*s.eg).toFixed(0)}%;background:rgb(${COST_COL})"></b></span>
-      <span class="vv">${(s.eg*5).toFixed(1)}</span></div>` : "");
+  }).join("");
   document.getElementById("pbody").innerHTML = `
     <p class="kicker">${esc(DIMS[s.d])} &middot; incident ${s.id}</p>
     <h2>${esc(s.t)}</h2>
