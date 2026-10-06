@@ -350,6 +350,11 @@ body.open #panel{transform:translateX(0)}
   font-family:var(--mono);font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;
   backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:0}
 #profile:hover{border-color:#1b1720}
+#homebtn{position:fixed;top:14px;right:58px;z-index:6;width:34px;height:34px;border-radius:50%;
+  border:1px solid rgba(150,140,150,.45);background:rgba(255,255,255,.6);color:#1b1720;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;padding:0;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+#homebtn:hover{border-color:#1b1720}
+@media (min-width:861px){ #homebtn{top:16px;right:70px} }
 #pmenu{position:fixed;top:56px;right:14px;z-index:40;width:290px;max-width:calc(100vw - 28px);background:#100c14;color:#efe9f2;
   border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:14px;box-shadow:0 18px 50px rgba(20,10,30,.3);display:none}
 #pmenu.show{display:block}
@@ -415,6 +420,17 @@ body.lighthome .ask{top:26vh!important;bottom:auto!important}
 @media (max-width:860px){ body.lighthome .ask{top:auto!important;bottom:16px!important} #hometitle{position:fixed;top:12vh;bottom:auto} }
 #mcost{margin:8px 18px 0 0;text-align:right;font-family:var(--mono);font-size:10px;letter-spacing:.04em;color:var(--mcost,#1d7a4a);transition:color .3s;min-height:1em}
 #mcost:empty{display:none}
+#hgauges{display:flex;justify-content:flex-end;gap:16px;margin:0 0 10px}
+#hgauges[hidden]{display:none}
+#hgauges .hg{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;min-width:44px;outline:none}
+#hgauges svg{height:28px;width:auto;display:block;overflow:visible}
+#hgauges .hfill{transition:transform 2.2s cubic-bezier(.22,1,.36,1)}
+#hgauges .hfill[data-k="energy"]{transform-box:fill-box;transform-origin:left center;transform:scaleX(0)}
+#hgauges .hfill:not([data-k="energy"]){transform:translateY(200px)}
+#hgauges .htip{position:absolute;bottom:calc(100% + 8px);right:0;width:max-content;max-width:220px;z-index:30;background:#100c14;color:#efe9f2;border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:8px 10px;font-family:var(--mono);font-size:10px;line-height:1.5;letter-spacing:.02em;text-align:left;white-space:normal;opacity:0;transform:translateY(4px);pointer-events:none;transition:opacity .15s,transform .15s}
+#hgauges .hg:hover .htip,#hgauges .hg:focus-visible .htip{opacity:1;transform:none}
+#hgauges .hv{font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;opacity:.8;white-space:nowrap}
+#hgauges .hv b{font-weight:400;opacity:.55}
 </style>
 </head>
 <body>
@@ -449,7 +465,10 @@ body.lighthome .ask{top:26vh!important;bottom:auto!important}
   <div class="chips" id="chips"></div>
 </div>
 
+<button id="homebtn" type="button" aria-label="Home" title="Home"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg></button>
+
 <div class="ui hist">
+  <div id="hgauges" hidden></div>
   <p class="hline" id="hline">nothing built yet &middot; scroll in, or type a prompt</p>
   <p class="hline" id="qcost" style="opacity:.9;cursor:pointer" hidden></p>
   <div class="hchips" id="hchips"></div>
@@ -1872,6 +1891,52 @@ function paintKeyCounts(){
 let askSeq = 0;
 const NONE_MSG = "No AI incidents have been linked to your request. There may not be an existential cost to humanity";
 const fmtN = (v, d) => v == null ? "\u2014" : (v >= 100 ? v.toFixed(0) : v.toFixed(d));
+/* session meters above the status line: battery = 14 Wh (charging an iPhone 17), bottle = 500 mL,
+   car = 400 gCO2e (one mile in an average gas car). Linear fills of the CUMULATIVE session cost, easing in slowly. */
+const HG = {
+  energy:{vb:"0 0 124 70", col:"#60f2a4", full:14,  unit:"Wh",   label:"energy", key:"totalEnergyWh",
+          tip:"Charging an iPhone 17 battery consumes 14Wh"},
+  water:{vb:"0 0 100 124", col:"#4f8fd6", full:500, unit:"mL",   label:"water",  key:"totalWaterMl", hi:4, h:120,
+          d:"M40 4h20v8c0 4 2 6 8 12 8 7 12 12 12 24v62c0 6-4 10-10 10H30c-6 0-10-4-10-10V48c0-12 4-17 12-24 6-6 8-8 8-12z",
+          tip:"A standard water bottle is 500mL"},
+  carbon:{vb:"0 0 124 64", col:"#e8a05a", full:400, unit:"gCO\u2082e", label:"carbon", key:"totalCarbonG", hi:6, h:50,
+          d:"M6 46v-8c0-4 3-7 7-8l14-3 13-13c2-2 4-3 7-3h34c3 0 5 1 7 3l12 12 9 2c5 1 8 4 8 9v9c0 2-2 4-4 4h-7a12 12 0 0 0-24 0H44a12 12 0 0 0-24 0H10c-2 0-4-2-4-4z",
+          tip:"Driving the average gas-powered car emits ~400gCO2e per mile."}
+};
+let hgBuilt = false;
+function paintHistGauges(t){
+  const box = document.getElementById("hgauges");
+  if (!t){ box.hidden = true; box.innerHTML = ""; hgBuilt = false; return; }
+  const stroke = 'fill="none" stroke="currentColor" stroke-opacity=".6" stroke-width="2"';
+  if (!hgBuilt){
+    box.innerHTML = Object.entries(HG).map(([k, c]) => {
+      const id = "hg" + k;
+      const body = k === "energy"
+        ? `<rect x="3" y="9" width="104" height="52" rx="7" ${stroke}/>
+           <rect x="107" y="24" width="9" height="22" rx="3" fill="currentColor" fill-opacity=".6"/>
+           <rect class="hfill" data-k="${k}" x="9" y="15" width="90" height="40" rx="3" fill="${c.col}"/>`
+        : `<clipPath id="${id}"><path d="${c.d}"/></clipPath>
+           <g clip-path="url(#${id})"><rect class="hfill" data-k="${k}" x="0" y="0" width="124" height="140" fill="${c.col}"/></g>
+           <path d="${c.d}" ${stroke}/>`
+          + (k === "carbon" ? `<circle cx="32" cy="50" r="7" ${stroke}/><circle cx="92" cy="50" r="7" ${stroke}/>` : "");
+      return `<div class="hg" tabindex="0" aria-label="${esc(c.tip)}"><span class="htip" role="tooltip">${esc(c.tip)}</span>
+        <svg viewBox="${c.vb}" role="img" aria-hidden="true">${body}</svg>
+        <span class="hv" data-v="${k}"></span></div>`;
+    }).join("");
+    hgBuilt = true;
+    box.hidden = false;
+    void box.offsetWidth;            /* start every fill from empty so it visibly rises */
+  }
+  box.hidden = false;
+  for (const [k, c] of Object.entries(HG)){
+    const v = Number(t[c.key]) || 0, frac = Math.min(1, v / c.full);
+    const vis = v > 0 ? Math.max(frac, 0.02) : 0;     /* a prompt always leaves a visible trace */
+    const r = box.querySelector(`.hfill[data-k="${k}"]`);
+    r.style.transform = k === "energy" ? `scaleX(${vis.toFixed(4)})` : `translateY(${(c.hi + c.h*(1 - vis)).toFixed(2)}px)`;
+    box.querySelector(`.hv[data-v="${k}"]`).innerHTML = `${fmtN(v,2)} / ${c.full} <b>${c.unit}</b>`;
+  }
+}
+document.getElementById("hgauges").onclick = () => document.getElementById("vcost").click();
 function showPromptCost(env){
   const qc = document.getElementById("qcost"), pc = document.getElementById("pcost");
   promptEnv = env || null;
@@ -1940,6 +2005,7 @@ document.getElementById("rotplay").onclick  = () => { rotOn = true;  paintRot();
 function setRotAvail(on){ rotAvail = on; paintRot(); }
 function setSession(t){
   sess = t && t.promptCount > 0 ? t : null;
+  paintHistGauges(sess);
   /* Close session appears once a prompt has actually been asked */
   document.getElementById("closesess").hidden = !sess;
 }
@@ -2108,8 +2174,6 @@ function openPanel(idx){
     ${s.sw ? `<h3>How this band was assigned</h3><p class="meta" style="opacity:.78">
        ${esc(s.sw)}${s.sl ? " &middot; lifted one band for population-scale institutional operation" : ""}</p>` : ""}
     <h3>Coded values</h3>${bars}
-    <p class="meta" style="margin-top:12px">Neglect index ${s.ni == null ? "—" : s.ni.toFixed(2)}
-      &mdash; harm weight minus press attention.</p>
     ${rel.length ? `<h3>Nearest in the field</h3>` + rel.map(([j,w]) => {
       const o = SPIKES[j];
       return `<button class="rel" data-go="${o.i}">${esc(o.t.slice(0,84))}${o.t.length>84?"…":""}
@@ -2122,6 +2186,19 @@ function openPanel(idx){
   if (commit < 0.9) commit = 1;
 }
 function closePanel(){ document.body.classList.remove("open"); selIdx = -1; }
+/* back to the light homepage. The session is kept (close it to end it); irreversible viruses stay on screen */
+function goHome(){
+  closePanel();
+  matched = null; sortTo = 0; sortPos.clear();
+  showPromptCost(null); setRotAvail(false);
+  const q0 = document.getElementById("q"); q0.value = ""; typed = 0;
+  scrolled = 0; lightHome = true;
+  commit = locked.size ? 1 : 0;
+  distTo = DIST0; yawTo = 0.30; pitchTo = -0.17; rollTo = 0; panXTo = panYTo = 0; fxTo = fyTo = fzTo = 0;
+  lastQuery = ""; paintModelCost();
+  setEyebrow(); renderHistory();
+}
+document.getElementById("homebtn").onclick = goHome;
 /* who was harmed: fetched by Incident ID from the backend, cached per id */
 const HARMED = new Map();
 async function loadHarmed(id){
