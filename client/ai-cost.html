@@ -1305,7 +1305,7 @@ function draw(){
     const isNow = matched ? matched.has(s.i) : false;
     const wasSeen = surfaced.has(s.i);
     let tier = 1;
-    if (matched || history.length || locked.size) tier = isLocked || isNow ? 1 : (wasSeen ? 0.40 : 0.09);
+    if (matched || history.length || locked.size) tier = isLocked || isNow || (!matched && wasSeen) ? 1 : (wasSeen ? 0.50 : 0.09);
     const dim = tier < 1;
     const shy = focus >= 0 && focus !== s.i && !near.has(s.i);
     const p3 = pt.get(s.i);
@@ -2513,7 +2513,11 @@ qi.addEventListener("input", () => {
   preview(qi.value);
   if (!qi.value.trim()){
     matched = null; setEyebrow();
-    sortTo = 0; sortPos.clear();
+    /* the session's viruses stay (laid out in the layers) until Close session or logout */
+    const keep = new Set([...surfaced, ...locked]);
+    if (keep.size){ planSort(keep); sortTo = 1; }
+    else { sortTo = 0; sortPos.clear(); }
+    paintKeyCounts();
   }
 });
 document.getElementById("ask").onsubmit = e => {
