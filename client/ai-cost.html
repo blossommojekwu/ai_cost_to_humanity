@@ -589,10 +589,12 @@ body.lighthome .ask{top:26vh!important;bottom:auto!important}
   <div class="box">
     <button id="costx" aria-label="Close">&times;</button>
     <p class="kicker" id="ckick">environmental cost</p>
-    <h2 id="ctitle">The energy behind every incident</h2>
-    <p>Each incident in the archive was produced by a system that had to be trained and run. That
-      cost is not an incident of its own &mdash; it rides on all of them. It is drawn as the green
-      phages gripping each body.</p>
+    <h2 id="ctitle">The energy cost behind your recent AI prompt</h2>
+    <p>The environmental cost of an AI search is drawn as the green phages gripping each virus body. 
+      They are modeled after antibiotic-resistant infections because it captures the idea of a systemic 
+      threat that can spread and become increasingly difficult to contain. The green color distinguishes 
+      environmental harm from the other dimensions of well-being while evoking the biological imagery 
+      of contamination and ecological disruption.</p>
     <div id="pcost" hidden></div>
     <div class="stat" id="cstat"></div>
     <div class="gauges" id="gauges"></div>
@@ -1306,6 +1308,8 @@ function draw(){
     const wasSeen = surfaced.has(s.i);
     let tier = 1;
     if (matched || history.length || locked.size) tier = isLocked || isNow || (!matched && wasSeen) ? 1 : (wasSeen ? 0.50 : 0.09);
+    /* on the light homepage only the held, most irreversible incidents (score 4-5) remain; everything else fades out */
+    if (lightT > 0) tier = lerp(tier, isLocked ? 1 : 0, lightT);
     const dim = tier < 1;
     const shy = focus >= 0 && focus !== s.i && !near.has(s.i);
     const p3 = pt.get(s.i);
@@ -2455,6 +2459,8 @@ function pick(ev){
     if (!passes(h.s)) continue;
     /* once a prompt has been asked, only incidents related to it (or held on screen) can be picked */
     if (matched && !matched.has(h.s.i) && !locked.has(h.s.i)) continue;
+    /* on the light homepage only the held, most irreversible incidents (4-5) can be picked */
+    if (lightT > 0.5 && !locked.has(h.s.i)) continue;
     if (h.ph){ if (d2 < pd){ pd = d2; ph = h; } }
     else if (d2 < bd){ bd = d2; body = h; }
   }
