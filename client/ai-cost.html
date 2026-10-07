@@ -1982,7 +1982,7 @@ function paintKeyCounts(){
   btns.forEach(b => {
     const kn = b.querySelector(".kn"); if (!kn) return;
     let n = null;
-    if (b.dataset.e) n = showTotals ? ENERGY_N : (cur ? energyN : null);
+    if (b.dataset.e) n = null;            /* environmental cost carries no count */
     else n = showTotals ? ITEMS.filter(x => x.d === +b.dataset.i).length : (cur ? perDim[+b.dataset.i] : null);
     kn.textContent = n == null ? "" : String(n);
   });
