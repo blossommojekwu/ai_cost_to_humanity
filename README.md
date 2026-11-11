@@ -111,6 +111,18 @@ This compiles TypeScript and builds the React app. Output:
 - Backend: `dist/server.js`
 - Frontend: `client/dist/`
 
+#### Deploy Frontend to Cloudflare Pages
+
+With the repository root as the project root, set the build command to
+`npm install && npm --prefix client install --include=dev && npm --prefix client run build:web`
+and the build output directory to `client/dist`. Deploy the built directory,
+not the `client` source directory.
+
+The frontend also needs the Express backend: deploy it separately with
+`GEMINI_API_KEY` configured and route `/api/*` on the site to that backend.
+The Vite development proxy does not run on Cloudflare Pages. The backend needs
+access to the dataset and writable persistent storage for its SQLite database.
+
 #### Run Production Build:
 ```bash
 npm run server

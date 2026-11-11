@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
+import { copyFileSync } from 'fs'
 
 // Serve ai-cost.html as the front end at "/" instead of index.html.
 const serveAiCost = () => ({
@@ -10,6 +11,9 @@ const serveAiCost = () => ({
       if (req.url === '/' || req.url === '/index.html') req.url = '/ai-cost.html'
       next()
     })
+  },
+  writeBundle({ dir }) {
+    copyFileSync(resolve(dir, 'ai-cost.html'), resolve(dir, 'index.html'))
   },
 })
 
